@@ -992,6 +992,13 @@ const SDR_ROLE_LABELS = {
   aux:    "Aux/Video",
 };
 
+function formatBandwidthHz(hz) {
+  if (!hz || hz <= 0) return "n/a";
+  if (hz >= 1e6) return `${(hz / 1e6).toFixed(1)} MHz BW`;
+  if (hz >= 1e3) return `${(hz / 1e3).toFixed(0)} kHz BW`;
+  return `${hz} Hz BW`;
+}
+
 function renderSdrGrid(devices) {
   const grid = document.getElementById("sdr-grid");
   if (!grid) return;
@@ -1006,8 +1013,17 @@ function renderSdrGrid(devices) {
         const safeRole    = escapeHtml(device.role);
         const safePurpose = escapeHtml(device.purpose);
         const safeDetail  = escapeHtml(device.detail);
+        const safeBw      = escapeHtml(formatBandwidthHz(device.bandwidth_hz));
         const safeRoleLabel = escapeHtml(SDR_ROLE_LABELS[device.role] || device.role);
         const encodedName = encodeURIComponent(device.name);
+        const supported = new Set(device.supported_roles || []);
+        const roleOption = (value, label) => {
+          const isSupported = supported.has(value);
+          const selected = device.role === value ? " selected" : "";
+          const disabled = isSupported ? "" : " disabled";
+          const suffix = isSupported ? "" : " — not supported by hardware";
+          return `<option value="${value}"${selected}${disabled}>${label}${suffix}</option>`;
+        };
         return `
         <div class="sdr-card">
           <div class="sdr-card-header">
@@ -1015,6 +1031,7 @@ function renderSdrGrid(devices) {
             <span class="sdr-role-badge sdr-role-${safeRole}">${safeRoleLabel}</span>
           </div>
           <p class="sdr-card-purpose">${safePurpose}</p>
+          <p class="sdr-card-bandwidth hint">${safeBw}</p>
           <div class="sdr-card-caps">
             ${(device.capabilities || []).map((cap) => `<span class="sdr-cap">${escapeHtml(cap)}</span>`).join("")}
           </div>
@@ -1023,9 +1040,9 @@ function renderSdrGrid(devices) {
           </p>
           <div class="sdr-assign-row">
             <select data-sdr-device="${encodedName}" aria-label="Assign role for ${safeName}">
-              <option value="scout"  ${device.role === "scout"  ? "selected" : ""}>Scout (recon/sweep)</option>
-              <option value="action" ${device.role === "action" ? "selected" : ""}>Action (voice/AI)</option>
-              <option value="aux"    ${device.role === "aux"    ? "selected" : ""}>Aux/Video (FPV)</option>
+              ${roleOption("scout",  "Scout (recon/sweep)")}
+              ${roleOption("action", "Action (voice/AI)")}
+              ${roleOption("aux",    "Aux/Video (FPV)")}
             </select>
             <button type="button" data-sdr-assign="${encodedName}">Assign</button>
           </div>

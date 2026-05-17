@@ -75,6 +75,8 @@ def build_sdr_device_entry(sdr: SdrDeviceConfig, effective_role: str) -> dict:
         "role": effective_role,
         "purpose": sdr.purpose,
         "capabilities": sdr.capabilities,
+        "bandwidth_hz": sdr.bandwidth_hz,
+        "supported_roles": sdr.supported_roles,
         "connected": ds.connected,
         "detail": ds.detail,
     }

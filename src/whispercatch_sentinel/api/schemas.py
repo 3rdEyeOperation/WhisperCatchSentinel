@@ -52,6 +52,8 @@ class SdrDeviceInfo(BaseModel):
     role: Literal["scout", "action", "aux"]
     purpose: str
     capabilities: list[str]
+    bandwidth_hz: int
+    supported_roles: list[Literal["scout", "action", "aux"]]
     connected: bool
     detail: str
 

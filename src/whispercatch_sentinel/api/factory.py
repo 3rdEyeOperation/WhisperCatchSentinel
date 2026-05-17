@@ -213,16 +213,28 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
     def assign_sdr_role(payload: SdrRoleAssignRequest) -> SdrRoleAssignResponse:
         """Reassign an SDR device to a different operator role at runtime.
 
-        All three roles (scout, action, aux) may be freely distributed among
-        the available devices.  The assignment persists in storage for the
-        lifetime of the session.
+        The new role must be in the device's hardware-capability allow-list
+        (``supported_roles``).  For example, an RTL-SDR V4 cannot serve as
+        ``scout`` because its 2.4 MHz front-end is too narrow to sweep, and
+        cannot serve as ``aux`` because it cannot decode a 6 MHz analog FPV
+        carrier.  The assignment persists in storage for the session.
         """
-        device_names = {sdr.name for sdr in SDR_DEVICES}
-        if payload.device_name not in device_names:
+        by_name = {sdr.name: sdr for sdr in SDR_DEVICES}
+        sdr = by_name.get(payload.device_name)
+        if sdr is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"SDR device not found: {payload.device_name!r}. "
-                       f"Known devices: {sorted(device_names)}",
+                       f"Known devices: {sorted(by_name)}",
+            )
+        if payload.role not in sdr.supported_roles:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"role {payload.role!r} not supported by {sdr.name!r} "
+                    f"(bandwidth {sdr.bandwidth_hz / 1e6:.1f} MHz). "
+                    f"Supported roles: {sdr.supported_roles}"
+                ),
             )
         role_overrides = dict(deps.storage.get_config("sdr_roles") or {})
         role_overrides[payload.device_name] = payload.role
