@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -48,13 +49,37 @@ class AppDependencies:
     gps: GpsReceiver | None = None
 
 
+def _gps_config_from_env(base: RuntimeConfig) -> RuntimeConfig:
+    """Apply ``WHISPERCATCH_GPSD_*`` env overrides to the runtime config.
+
+    Allows operators to flip on gpsd at deploy time without code edits, which
+    is the standard knob used by the systemd unit / container env file.
+    Truthy values: ``1``, ``true``, ``yes`` (case-insensitive).
+    """
+    raw = os.getenv("WHISPERCATCH_GPSD_ENABLED")
+    enabled = base.gpsd_enabled
+    if raw is not None:
+        enabled = raw.strip().lower() in {"1", "true", "yes", "on"}
+    host = os.getenv("WHISPERCATCH_GPSD_HOST", base.gpsd_host)
+    port_raw = os.getenv("WHISPERCATCH_GPSD_PORT")
+    try:
+        port = int(port_raw) if port_raw is not None else base.gpsd_port
+    except ValueError:
+        port = base.gpsd_port
+    return base.model_copy(update={
+        "gpsd_enabled": enabled,
+        "gpsd_host": host,
+        "gpsd_port": port,
+    })
+
+
 def _build_default_dependencies(
     *,
     storage_path: str | Path = ":memory:",
     vault_path: str | Path | None = None,
     enforce_tmpfs: bool = False,
 ) -> AppDependencies:
-    config = RuntimeConfig()
+    config = _gps_config_from_env(RuntimeConfig())
     storage = Storage(storage_path)
     vault = VolatileKeyVault(
         vault_path or "/dev/shm/whispercatch/keys.json",
@@ -90,7 +115,26 @@ def _dashboard_allowed_origins() -> list[str]:
 
 def create_app(deps: AppDependencies | None = None) -> FastAPI:
     deps = deps or _build_default_dependencies()
-    app = FastAPI(title="WhisperCatch Sentinel", version="0.2.0")
+
+    # ------------------------------------------------------------------
+    # Lifespan: own the gpsd receiver thread for the lifetime of the API.
+    # ------------------------------------------------------------------
+    # Auto-managing the receiver here means operators just enable
+    # ``gpsd_enabled`` in config and the backend immediately begins consuming
+    # TPV frames — no separate bootstrap script required. ``start()`` is
+    # idempotent, so this is safe even if a caller pre-started the receiver
+    # before handing the deps in.
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        if deps.gps is not None:
+            deps.gps.start()
+        try:
+            yield
+        finally:
+            if deps.gps is not None:
+                deps.gps.stop()
+
+    app = FastAPI(title="WhisperCatch Sentinel", version="0.2.0", lifespan=_lifespan)
     app.state.deps = deps
     app.add_middleware(
         CORSMiddleware,

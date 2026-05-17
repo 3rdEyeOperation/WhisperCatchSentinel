@@ -134,15 +134,14 @@ sudo systemctl enable --now gpsd
 # Verify with: gpspipe -w -n 5
 ```
 
-Then enable the integration when constructing the backend dependencies (set
-`gpsd_enabled=True` on `RuntimeConfig`) and start the receiver thread once
-the API process is up:
+Then enable the integration on `RuntimeConfig` (set `gpsd_enabled=True`).
+The FastAPI app owns the receiver lifecycle — it starts the gpsd reader
+thread on app startup and stops it on shutdown, so no extra bootstrap
+script is needed:
 
-```python
-deps = _build_default_dependencies()
-# In real deployments — call this from your start-up script:
-if deps.gps is not None:
-    deps.gps.start()
+```bash
+WHISPERCATCH_GPSD_ENABLED=1  # (or wire RuntimeConfig in your own factory)
+uvicorn whispercatch_sentinel.app:app --host 0.0.0.0 --port 8000
 ```
 
 Behaviour:

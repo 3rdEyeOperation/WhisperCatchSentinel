@@ -195,3 +195,111 @@ def test_receiver_drops_stale_fix() -> None:
     )
     receiver.set_fix(fix)
     assert receiver.latest_fix() is None
+
+
+# ---------------------------------------------------------------------------
+# API lifecycle: the backend should own the gpsd receiver thread
+# ---------------------------------------------------------------------------
+def test_app_startup_starts_and_shutdown_stops_gps_receiver(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from whispercatch_sentinel.api import AppDependencies, create_app
+    from whispercatch_sentinel.config import RuntimeConfig
+    from whispercatch_sentinel.cot import CotGateway
+    from whispercatch_sentinel.cuas import CuasAggregator
+    from whispercatch_sentinel.heatmap import HeatmapEngine
+    from whispercatch_sentinel.keys import VolatileKeyVault
+    from whispercatch_sentinel.storage import Storage
+    from whispercatch_sentinel.streams import StreamBus
+
+    started: list[bool] = []
+    stopped: list[bool] = []
+
+    class _SpyReceiver(GpsReceiver):
+        def start(self) -> None:  # type: ignore[override]
+            started.append(True)
+
+        def stop(self, timeout: float | None = 2.0) -> None:  # type: ignore[override]
+            stopped.append(True)
+
+    storage = Storage(tmp_path / "wcs.sqlite")
+    vault = VolatileKeyVault(tmp_path / "keys.json", enforce_tmpfs=False)
+    config = RuntimeConfig(tmpfs_path=str(tmp_path), gpsd_enabled=True)
+    deps = AppDependencies(
+        config=config,
+        storage=storage,
+        vault=vault,
+        aggregator=CuasAggregator(),
+        heatmap=HeatmapEngine(storage),
+        bus=StreamBus(),
+        gateway=CotGateway(
+            config.cot_multicast_group,
+            config.cot_multicast_port,
+            sender=lambda *a, **kw: None,
+        ),
+        gps=_SpyReceiver(),
+    )
+    # Entering the TestClient context triggers FastAPI startup; exiting
+    # triggers shutdown. The spy verifies both halves of the lifecycle.
+    with TestClient(create_app(deps)) as client:
+        assert client.get("/api/v1/health").status_code == 200
+        assert started == [True]
+        assert stopped == []
+    assert stopped == [True]
+
+
+def test_app_lifecycle_is_safe_without_gps(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from whispercatch_sentinel.api import AppDependencies, create_app
+    from whispercatch_sentinel.config import RuntimeConfig
+    from whispercatch_sentinel.cot import CotGateway
+    from whispercatch_sentinel.cuas import CuasAggregator
+    from whispercatch_sentinel.heatmap import HeatmapEngine
+    from whispercatch_sentinel.keys import VolatileKeyVault
+    from whispercatch_sentinel.storage import Storage
+    from whispercatch_sentinel.streams import StreamBus
+
+    storage = Storage(tmp_path / "wcs.sqlite")
+    vault = VolatileKeyVault(tmp_path / "keys.json", enforce_tmpfs=False)
+    config = RuntimeConfig(tmpfs_path=str(tmp_path))
+    deps = AppDependencies(
+        config=config,
+        storage=storage,
+        vault=vault,
+        aggregator=CuasAggregator(),
+        heatmap=HeatmapEngine(storage),
+        bus=StreamBus(),
+        gateway=CotGateway(
+            config.cot_multicast_group,
+            config.cot_multicast_port,
+            sender=lambda *a, **kw: None,
+        ),
+        gps=None,
+    )
+    with TestClient(create_app(deps)) as client:
+        assert client.get("/api/v1/health").status_code == 200
+
+
+def test_default_dependencies_honor_gpsd_env_vars(monkeypatch) -> None:
+    from whispercatch_sentinel.api.factory import _build_default_dependencies
+
+    monkeypatch.setenv("WHISPERCATCH_GPSD_ENABLED", "1")
+    monkeypatch.setenv("WHISPERCATCH_GPSD_HOST", "10.0.0.7")
+    monkeypatch.setenv("WHISPERCATCH_GPSD_PORT", "3737")
+    deps = _build_default_dependencies()
+    assert deps.config.gpsd_enabled is True
+    assert deps.config.gpsd_host == "10.0.0.7"
+    assert deps.config.gpsd_port == 3737
+    assert deps.gps is not None
+    assert deps.gps.host == "10.0.0.7"
+    assert deps.gps.port == 3737
+
+
+def test_default_dependencies_skip_gps_when_env_disables(monkeypatch) -> None:
+    from whispercatch_sentinel.api.factory import _build_default_dependencies
+
+    monkeypatch.delenv("WHISPERCATCH_GPSD_ENABLED", raising=False)
+    deps = _build_default_dependencies()
+    assert deps.config.gpsd_enabled is False
+    assert deps.gps is None
