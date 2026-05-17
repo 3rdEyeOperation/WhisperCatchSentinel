@@ -38,3 +38,27 @@ def test_dashboard_vendored_leaflet_is_served_offline() -> None:
     assert "L.Map" in js.text or "Leaflet" in js.text
     assert ".leaflet-container" in css.text
     assert "heatLayer" in heat.text
+
+
+def test_dashboard_exposes_cesium_3d_view_toggle() -> None:
+    """The RF panel must expose a 2D/3D toggle and the JS bundle must contain
+    the Cesium lazy-loader so the 3D globe view can be activated on demand."""
+
+    client = TestClient(create_dashboard_app())
+
+    index = client.get("/")
+    bundle = client.get("/assets/dashboard.js")
+
+    assert index.status_code == 200
+    assert 'data-view="2d"' in index.text
+    assert 'data-view="3d"' in index.text
+    assert 'id="heatmap-cesium"' in index.text
+
+    assert bundle.status_code == 200
+    assert "loadCesium" in bundle.text
+    assert "renderHeatmapCesium" in bundle.text
+    # Lazy-load — Cesium must not be referenced as a hard <script> import in
+    # the served HTML; that would break offline operation.
+    assert "cesium.com/releases" not in index.text
+    assert "cesium@" not in index.text
+

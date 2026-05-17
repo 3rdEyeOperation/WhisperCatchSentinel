@@ -215,6 +215,171 @@ let rf_marker_layer = null;
 let rf_last_points = [];
 let last_drones = [];
 
+// View-mode state. "2d" uses the vendored Leaflet map (offline-safe default),
+// "3d" lazy-loads Cesium.js from the official CDN for a richer 3D heatmap.
+let rf_view_mode = "2d";
+let cesium_viewer = null;
+let cesium_loading = null;
+let cesium_failed = false;
+const CESIUM_VERSION = "1.118.2";
+const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium`;
+
+function setViewStatus(message, level = "info") {
+  const node = document.getElementById("rf-view-status");
+  if (!node) return;
+  node.textContent = message || "";
+  node.classList.remove("state-warn", "state-bad", "state-ok");
+  if (level === "warn") node.classList.add("state-warn");
+  else if (level === "bad") node.classList.add("state-bad");
+  else if (level === "ok") node.classList.add("state-ok");
+}
+
+function loadCesium() {
+  if (typeof Cesium !== "undefined") return Promise.resolve(window.Cesium);
+  if (cesium_loading) return cesium_loading;
+  setViewStatus("Loading Cesium from CDN…");
+  cesium_loading = new Promise((resolve, reject) => {
+    // Cesium needs CESIUM_BASE_URL to locate its workers, assets and widgets.
+    window.CESIUM_BASE_URL = `${CESIUM_BASE}/`;
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = `${CESIUM_BASE}/Widgets/widgets.css`;
+    document.head.appendChild(css);
+    const script = document.createElement("script");
+    script.src = `${CESIUM_BASE}/Cesium.js`;
+    script.async = true;
+    script.onload = () => resolve(window.Cesium);
+    script.onerror = () => reject(new Error("Cesium failed to load (CDN unreachable?)"));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    cesium_loading = null;
+    cesium_failed = true;
+    throw error;
+  });
+  return cesium_loading;
+}
+
+function ensureCesium() {
+  if (cesium_viewer) return cesium_viewer;
+  const node = document.getElementById("heatmap-cesium");
+  if (!node || typeof Cesium === "undefined") return null;
+  // Suppress Ion access-token requirement by clearing it; we use OSM imagery.
+  try { Cesium.Ion.defaultAccessToken = ""; } catch (error) { /* ignore */ }
+  cesium_viewer = new Cesium.Viewer(node, {
+    baseLayerPicker: false,
+    geocoder: false,
+    timeline: false,
+    animation: false,
+    homeButton: false,
+    navigationHelpButton: false,
+    sceneModePicker: false,
+    fullscreenButton: false,
+    infoBox: true,
+    selectionIndicator: true,
+    imageryProvider: new Cesium.UrlTemplateImageryProvider({
+      url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      subdomains: ["a", "b", "c"],
+      maximumLevel: 19,
+      credit: "© OpenStreetMap contributors",
+    }),
+  });
+  cesium_viewer.scene.globe.enableLighting = false;
+  return cesium_viewer;
+}
+
+function cesiumColorFor(signal_type, intensity) {
+  const css = colorFor(signal_type);
+  // Convert CSS hex/rgb to a Cesium.Color and apply alpha from intensity.
+  const color = Cesium.Color.fromCssColorString(css);
+  return color.withAlpha(0.45 + Math.min(0.5, Math.max(0, intensity * 0.55)));
+}
+
+function renderHeatmapCesium(points) {
+  const viewer = ensureCesium();
+  if (!viewer) return;
+  viewer.entities.removeAll();
+  if (!points.length) {
+    setViewStatus("3D globe ready — no points in current filter.", "warn");
+    return;
+  }
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+  for (const point of points) {
+    const intensity = Math.max(0.05, Math.min(1, point.intensity || 0.2));
+    const height = 40 + intensity * 4000; // metres above ellipsoid
+    const radius = 60 + intensity * 220;
+    viewer.entities.add({
+      name: `${point.signal_type || "unknown"} @ ${formatHz(point.frequency_hz)}`,
+      position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, height / 2),
+      cylinder: {
+        length: height,
+        topRadius: radius,
+        bottomRadius: radius,
+        material: cesiumColorFor(point.signal_type, intensity),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString(colorFor(point.signal_type)).withAlpha(0.85),
+      },
+      description:
+        `<table style="color:#eaf2ff">
+          <tr><th>Signal</th><td>${point.signal_type || "unknown"}</td></tr>
+          <tr><th>Frequency</th><td>${formatHz(point.frequency_hz)}</td></tr>
+          <tr><th>RSSI</th><td>${point.rssi_dbm} dBm</td></tr>
+          <tr><th>Intensity</th><td>${intensity.toFixed(2)}</td></tr>
+          <tr><th>Captured</th><td>${formatTimestamp(point.captured_at)}</td></tr>
+        </table>`,
+    });
+    minLat = Math.min(minLat, point.lat);
+    maxLat = Math.max(maxLat, point.lat);
+    minLon = Math.min(minLon, point.lon);
+    maxLon = Math.max(maxLon, point.lon);
+  }
+  // Frame the data set with a small padding ring.
+  const padLat = Math.max(0.001, (maxLat - minLat) * 0.4);
+  const padLon = Math.max(0.001, (maxLon - minLon) * 0.4);
+  viewer.camera.flyTo({
+    destination: Cesium.Rectangle.fromDegrees(
+      minLon - padLon,
+      minLat - padLat,
+      maxLon + padLon,
+      maxLat + padLat,
+    ),
+    duration: 0,
+  });
+  setViewStatus(`3D globe rendering ${points.length} emitter columns.`, "ok");
+}
+
+async function switchView(mode) {
+  if (mode === rf_view_mode) return;
+  rf_view_mode = mode;
+  document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+    const active = btn.dataset.view === mode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", String(active));
+  });
+  const map2d = document.getElementById("heatmap-map");
+  const cesiumNode = document.getElementById("heatmap-cesium");
+  const fallback = document.getElementById("heatmap-fallback");
+  if (mode === "3d") {
+    map2d?.classList.add("hidden");
+    fallback?.classList.add("hidden");
+    cesiumNode?.classList.remove("hidden");
+    try {
+      await loadCesium();
+      renderHeatmapCesium(applyClientFilter(rf_last_points));
+    } catch (error) {
+      setViewStatus(`${error.message} — staying on 2D map.`, "bad");
+      // Roll back to 2D so the operator is not left with a blank pane.
+      await switchView("2d");
+    }
+  } else {
+    cesiumNode?.classList.add("hidden");
+    map2d?.classList.remove("hidden");
+    // Leaflet needs a size hint after being un-hidden.
+    if (rf_map) setTimeout(() => rf_map.invalidateSize(), 50);
+    renderHeatmap(rf_last_points);
+    if (!cesium_failed) setViewStatus("");
+  }
+}
+
 function ensureMap() {
   if (rf_map || typeof L === "undefined") return rf_map;
   const node = document.getElementById("heatmap-map");
@@ -570,8 +735,12 @@ function renderHeatmap(points) {
   const filtered = applyClientFilter(points);
   renderBandChips(points);
   renderSignalChips(points);
-  renderHeatmapMap(filtered);
-  if (typeof L === "undefined") renderHeatmapFallback(filtered);
+  if (rf_view_mode === "3d" && typeof Cesium !== "undefined") {
+    renderHeatmapCesium(filtered);
+  } else {
+    renderHeatmapMap(filtered);
+    if (typeof L === "undefined") renderHeatmapFallback(filtered);
+  }
   const bands = aggregateBands(filtered);
   renderRfSummary(filtered, bands);
   renderBandBreakdown(bands);
@@ -677,6 +846,10 @@ document.getElementById("signal-chips").addEventListener("click", (event) => {
   if (band_filter_state.signal_types.has(sig)) band_filter_state.signal_types.delete(sig);
   else band_filter_state.signal_types.add(sig);
   renderHeatmap(rf_last_points);
+});
+
+document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
 });
 
 document.getElementById("cot-form").addEventListener("submit", async (event) => {

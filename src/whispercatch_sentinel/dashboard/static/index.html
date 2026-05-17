@@ -145,7 +145,13 @@
             <h2>RF Coverage &amp; Frequency Planning</h2>
             <p class="hint">CloudRF-style geo heatmap of every detected emitter — radio comms, drone C2 and telemetry — for spectrum and comm-plan decisions.</p>
           </div>
-          <button type="button" data-action="refresh-heatmap">Refresh</button>
+          <div class="rf-header-actions">
+            <div class="view-toggle" role="tablist" aria-label="Heatmap view mode">
+              <button type="button" class="view-toggle-btn active" data-view="2d" role="tab" aria-selected="true">2D map</button>
+              <button type="button" class="view-toggle-btn" data-view="3d" role="tab" aria-selected="false">3D globe</button>
+            </div>
+            <button type="button" data-action="refresh-heatmap">Refresh</button>
+          </div>
         </div>
         <form id="heatmap-filter-form" class="inline-form">
           <input type="text" name="signal_type" placeholder="Signal type (e.g. droneid)">
@@ -162,12 +168,14 @@
         <div class="rf-layout">
           <div class="rf-map-wrap">
             <div id="heatmap-map" class="rf-map" aria-label="RF coverage heatmap"></div>
+            <div id="heatmap-cesium" class="rf-map rf-cesium hidden" aria-label="RF coverage 3D globe"></div>
             <svg id="heatmap-fallback" class="rf-fallback" viewBox="0 0 640 240" role="img" aria-label="Heatmap point plot fallback"></svg>
             <div class="rf-legend" aria-label="Heatmap intensity legend">
               <span class="rf-legend-label">Low</span>
               <span class="rf-legend-gradient"></span>
               <span class="rf-legend-label">High</span>
             </div>
+            <p class="rf-view-status hint" id="rf-view-status" role="status" aria-live="polite"></p>
           </div>
           <aside class="rf-sidebar">
             <div class="rf-card">

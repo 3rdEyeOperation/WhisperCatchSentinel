@@ -95,9 +95,15 @@ The dashboard served on port `8080` provides:
 - system profile and key injection forms
 - transcript viewing with talkgroup/decryption filters
 - drone telemetry tables
-- **CloudRF-style RF coverage map** (Leaflet + heat overlay) with band/signal
-  filter chips, spectrum summary, band breakdown, top emitter list, comm-plan
-  channel suggestions, and a drone-telemetry frequency-planning panel
+- **CloudRF-style RF coverage map** with a `2D map` / `3D globe` toggle:
+  - **2D map**: vendored Leaflet + heat overlay (works fully offline).
+  - **3D globe**: Cesium.js (lazy-loaded from the official CDN) rendering each
+    emitter as a colored 3D column whose height encodes intensity and color
+    encodes signal type. Falls back to the 2D map with a banner notice if the
+    Cesium CDN is unreachable.
+  - Band and signal-type filter chips, spectrum summary, band breakdown, top
+    emitter list, comm-plan channel suggestions, and a drone-telemetry
+    frequency-planning panel.
 - live WebSocket panels for waterfall, SIGINT, and FPV streams
 - operator helper forms for CoT emission and CUAS ingest
 
@@ -105,7 +111,10 @@ The Leaflet map assets are bundled under
 `whispercatch_sentinel/dashboard/static/vendor/leaflet/` so the dashboard works
 in air-gapped environments. If the operator browser cannot reach OpenStreetMap
 tile servers, the map still renders heat points; a static SVG plot is provided
-as a final fallback.
+as a final fallback. Cesium.js (used only when the operator switches to the
+**3D globe** view) is loaded on demand from the official jsDelivr CDN — it is
+too large (~100 MB unpacked) to vendor; when the CDN is unreachable, the panel
+remains on the offline 2D Leaflet view and the operator is notified inline.
 
 ## Test
 

@@ -204,6 +204,86 @@ td {
   gap: 1rem;
 }
 
+.rf-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #0a1627;
+}
+
+.view-toggle-btn {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.5rem 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.view-toggle-btn + .view-toggle-btn {
+  border-left: 1px solid var(--panel-border);
+}
+
+.view-toggle-btn.active {
+  background: rgba(89, 193, 255, 0.18);
+  color: #fff;
+}
+
+.rf-cesium {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+}
+
+.rf-cesium .cesium-viewer,
+.rf-cesium .cesium-viewer-cesiumWidgetContainer,
+.rf-cesium .cesium-widget,
+.rf-cesium .cesium-widget canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.rf-cesium .cesium-viewer-bottom {
+  bottom: 6px;
+}
+
+.rf-cesium.hidden,
+.rf-map.hidden {
+  display: none;
+}
+
+.rf-view-status {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(7, 17, 31, 0.85);
+  border: 1px solid var(--panel-border);
+  font-size: 0.78rem;
+  color: var(--muted);
+  z-index: 600;
+  pointer-events: none;
+  max-width: 80%;
+  text-align: center;
+}
+
+.rf-view-status:empty {
+  display: none;
+}
+
 #heatmap-plot,
 .rf-fallback {
   width: 100%;
