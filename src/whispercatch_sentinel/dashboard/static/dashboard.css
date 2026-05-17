@@ -471,3 +471,94 @@ td {
     flex-direction: column;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* SDR Radio Assignment panel                                            */
+/* ------------------------------------------------------------------ */
+
+.sdr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.sdr-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.9rem;
+  background: #0a1627;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sdr-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.sdr-card-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex: 1;
+}
+
+.sdr-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+
+.sdr-role-scout  { color: #59c1ff; background: rgba(89,193,255,0.10); }
+.sdr-role-action { color: #48d597; background: rgba(72,213,151,0.10); }
+.sdr-role-aux    { color: #ffcc66; background: rgba(255,204,102,0.10); }
+
+.sdr-card-purpose {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.sdr-card-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.sdr-cap {
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: #061325;
+}
+
+.sdr-card-status {
+  font-size: 0.82rem;
+}
+
+.sdr-assign-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.3rem;
+}
+
+.sdr-assign-row select {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.sdr-assign-row button {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+}

@@ -45,6 +45,34 @@ class KeyInjectionResponse(BaseModel):
     refused: list[dict]
 
 
+class SdrDeviceInfo(BaseModel):
+    """Runtime state of one SDR radio including its assigned operator role."""
+
+    name: str
+    role: Literal["scout", "action", "aux"]
+    purpose: str
+    capabilities: list[str]
+    bandwidth_hz: int
+    supported_roles: list[Literal["scout", "action", "aux"]]
+    connected: bool
+    detail: str
+
+
+class SdrRoleAssignRequest(BaseModel):
+    """Reassign an SDR device to a different operator role at runtime."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_name: str = Field(min_length=1, max_length=128)
+    role: Literal["scout", "action", "aux"]
+
+
+class SdrRoleAssignResponse(BaseModel):
+    status: str
+    device_name: str
+    role: str
+
+
 class DroneTelemetry(BaseModel):
     captured_at: float
     source: str

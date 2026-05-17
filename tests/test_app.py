@@ -24,6 +24,7 @@ def test_status_endpoint_exposes_required_device_profiles() -> None:
     assert {
         "HackRF One",
         "RTL-SDR V4",
+        "HackRF One (Aux)",
         "Alfa USB Wi-Fi",
         "Sniffle BLE Coded PHY",
     }.issubset(names)
