@@ -16,8 +16,62 @@ const heatmap_filter_state = {
   signal_type: "",
   frequency_hz: "",
   tolerance_hz: "5000000",
-  limit: "250",
+  limit: "2000",
 };
+
+const band_filter_state = {
+  bands: new Set(),
+  signal_types: new Set(),
+};
+
+const RF_BANDS = [
+  { id: "HF", label: "HF", min: 3e6, max: 30e6 },
+  { id: "VHF", label: "VHF", min: 30e6, max: 300e6 },
+  { id: "UHF", label: "UHF", min: 300e6, max: 1e9 },
+  { id: "L", label: "L (1–2 GHz)", min: 1e9, max: 2e9 },
+  { id: "ISM-2.4", label: "2.4 GHz ISM", min: 2.4e9, max: 2.5e9 },
+  { id: "ISM-915", label: "915 MHz", min: 902e6, max: 928e6 },
+  { id: "ISM-433", label: "433 MHz", min: 433e6, max: 435e6 },
+  { id: "S", label: "S (2–4 GHz)", min: 2e9, max: 4e9 },
+  { id: "C", label: "C (4–6 GHz)", min: 4e9, max: 6e9 },
+  { id: "ISM-5.8", label: "5.8 GHz ISM", min: 5.725e9, max: 5.875e9 },
+  { id: "X+", label: "X+ (>6 GHz)", min: 6e9, max: 40e9 },
+];
+
+const SIGNAL_TYPE_COLORS = {
+  analog_fpv: "#ff7b7b",
+  droneid: "#ffcc66",
+  wifi: "#59c1ff",
+  ble: "#a78bfa",
+  p25: "#48d597",
+  dmr: "#22d3ee",
+  unknown: "#9ab0c9",
+};
+
+function bandFor(frequency_hz) {
+  if (!frequency_hz || frequency_hz <= 0) return { id: "unknown", label: "Unknown" };
+  for (const band of RF_BANDS) {
+    if (frequency_hz >= band.min && frequency_hz <= band.max) {
+      return band;
+    }
+  }
+  return { id: "unknown", label: "Unknown" };
+}
+
+function colorFor(signal_type) {
+  if (!signal_type) return SIGNAL_TYPE_COLORS.unknown;
+  const key = String(signal_type).toLowerCase();
+  return SIGNAL_TYPE_COLORS[key] || SIGNAL_TYPE_COLORS.unknown;
+}
+
+function formatHz(hz) {
+  if (hz === null || hz === undefined) return "n/a";
+  const value = Number(hz);
+  if (value >= 1e9) return `${(value / 1e9).toFixed(3)} GHz`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(3)} MHz`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(2)} kHz`;
+  return `${value} Hz`;
+}
 
 document.getElementById("backend-url").textContent = `Backend: ${backendHttpBase}`;
 
@@ -136,6 +190,7 @@ async function refreshTranscripts() {
 
 async function refreshDrones() {
   const drones = await fetchJson("/api/v1/telemetry/drones");
+  last_drones = drones;
   renderTableRows(
     "drone-table",
     drones.map(
@@ -150,17 +205,105 @@ async function refreshDrones() {
     "No drone contacts available.",
     5,
   );
+  // Refresh the drone-side planning panel against current heatmap cache.
+  if (rf_last_points.length) renderDronePlanning(applyClientFilter(rf_last_points), last_drones);
 }
 
-function renderHeatmap(points) {
-  const plot = document.getElementById("heatmap-plot");
-  const summary = document.getElementById("heatmap-summary");
-  if (!points.length) {
-    plot.innerHTML = "";
-    summary.textContent = "No points loaded.";
+let rf_map = null;
+let rf_heat_layer = null;
+let rf_marker_layer = null;
+let rf_last_points = [];
+let last_drones = [];
+
+function ensureMap() {
+  if (rf_map || typeof L === "undefined") return rf_map;
+  const node = document.getElementById("heatmap-map");
+  if (!node) return null;
+  document.getElementById("heatmap-fallback")?.classList.add("hidden");
+  rf_map = L.map(node, {
+    center: [20, 0],
+    zoom: 2,
+    worldCopyJump: true,
+    preferCanvas: true,
+  });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(rf_map);
+  rf_marker_layer = L.layerGroup().addTo(rf_map);
+  if (L.heatLayer) {
+    rf_heat_layer = L.heatLayer([], {
+      radius: 28,
+      blur: 24,
+      minOpacity: 0.35,
+      maxZoom: 17,
+      gradient: {
+        0.0: "#0a3b66",
+        0.25: "#1f8fff",
+        0.5: "#48d597",
+        0.7: "#ffcc66",
+        1.0: "#ff5252",
+      },
+    }).addTo(rf_map);
+  }
+  return rf_map;
+}
+
+function applyClientFilter(points) {
+  return points.filter((point) => {
+    if (band_filter_state.bands.size) {
+      const band = bandFor(point.frequency_hz);
+      if (!band_filter_state.bands.has(band.id)) return false;
+    }
+    if (band_filter_state.signal_types.size) {
+      if (!band_filter_state.signal_types.has(String(point.signal_type).toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function renderHeatmapMap(points) {
+  const map = ensureMap();
+  if (!map) {
+    renderHeatmapFallback(points);
     return;
   }
+  rf_marker_layer.clearLayers();
+  const heatPoints = points.map((point) => [point.lat, point.lon, Math.max(0.05, Math.min(1, point.intensity || 0.2))]);
+  if (rf_heat_layer) rf_heat_layer.setLatLngs(heatPoints);
 
+  for (const point of points) {
+    const radius = 3 + Math.max(0, Math.min(8, (point.intensity || 0) * 8));
+    L.circleMarker([point.lat, point.lon], {
+      radius,
+      color: colorFor(point.signal_type),
+      weight: 1,
+      fillColor: colorFor(point.signal_type),
+      fillOpacity: 0.65,
+    })
+      .bindPopup(
+        `<strong>${point.signal_type || "unknown"}</strong><br>${formatHz(point.frequency_hz)}<br>RSSI ${point.rssi_dbm} dBm<br>${formatTimestamp(point.captured_at)}`,
+      )
+      .addTo(rf_marker_layer);
+  }
+
+  if (points.length) {
+    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lon]));
+    map.fitBounds(bounds.pad(0.2), { maxZoom: 14, animate: false });
+  }
+}
+
+function renderHeatmapFallback(points) {
+  const plot = document.getElementById("heatmap-fallback");
+  if (!plot) return;
+  plot.classList.remove("hidden");
+  if (!points.length) {
+    plot.innerHTML = "";
+    return;
+  }
   const lats = points.map((point) => point.lat);
   const lons = points.map((point) => point.lon);
   const minLat = Math.min(...lats);
@@ -169,18 +312,272 @@ function renderHeatmap(points) {
   const maxLon = Math.max(...lons);
   const lonSpan = Math.max(0.0001, maxLon - minLon);
   const latSpan = Math.max(0.0001, maxLat - minLat);
-
   plot.innerHTML = points
     .map((point) => {
       const x = 20 + ((point.lon - minLon) / lonSpan) * 600;
       const y = 20 + (1 - (point.lat - minLat) / latSpan) * 200;
-      const radius = 4 + Math.max(0, Math.min(14, point.intensity * 10));
-      const alpha = 0.25 + Math.max(0.2, Math.min(0.9, point.intensity));
-      const title = `${point.signal_type} @ ${point.frequency_hz}Hz`;
-      return `<circle cx="${x}" cy="${y}" r="${radius}" fill="rgba(89,193,255,${alpha})"><title>${title}</title></circle>`;
+      const radius = 4 + Math.max(0, Math.min(14, (point.intensity || 0) * 10));
+      const alpha = 0.25 + Math.max(0.2, Math.min(0.9, point.intensity || 0));
+      const color = colorFor(point.signal_type);
+      const title = `${point.signal_type} @ ${formatHz(point.frequency_hz)}`;
+      return `<circle cx="${x}" cy="${y}" r="${radius}" fill="${color}" fill-opacity="${alpha}"><title>${title}</title></circle>`;
     })
     .join("");
-  summary.textContent = `${points.length} heatmap points spanning lat ${minLat.toFixed(5)}–${maxLat.toFixed(5)} / lon ${minLon.toFixed(5)}–${maxLon.toFixed(5)}.`;
+}
+
+function renderBandChips(points) {
+  const counts = new Map();
+  for (const point of points) {
+    const band = bandFor(point.frequency_hz);
+    counts.set(band.id, (counts.get(band.id) || 0) + 1);
+  }
+  const node = document.getElementById("band-chips");
+  if (!node) return;
+  const chips = RF_BANDS.filter((band) => counts.has(band.id)).map((band) => {
+    const active = band_filter_state.bands.has(band.id);
+    return `<button type="button" class="chip ${active ? "chip-active" : ""}" data-band="${band.id}">${band.label} <span>${counts.get(band.id)}</span></button>`;
+  });
+  if (counts.has("unknown")) {
+    const active = band_filter_state.bands.has("unknown");
+    chips.push(`<button type="button" class="chip ${active ? "chip-active" : ""}" data-band="unknown">Unknown <span>${counts.get("unknown")}</span></button>`);
+  }
+  node.innerHTML = chips.join("") || `<span class="hint">No bands in current query.</span>`;
+}
+
+function renderSignalChips(points) {
+  const counts = new Map();
+  for (const point of points) {
+    const key = String(point.signal_type || "unknown").toLowerCase();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const node = document.getElementById("signal-chips");
+  if (!node) return;
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  node.innerHTML = entries
+    .map(([type, count]) => {
+      const active = band_filter_state.signal_types.has(type);
+      return `<button type="button" class="chip ${active ? "chip-active" : ""}" data-signal="${type}" style="--chip-accent:${colorFor(type)}">${type} <span>${count}</span></button>`;
+    })
+    .join("") || `<span class="hint">No signal types in current query.</span>`;
+}
+
+function aggregateBands(points) {
+  const buckets = new Map();
+  for (const point of points) {
+    const band = bandFor(point.frequency_hz);
+    const entry = buckets.get(band.id) || {
+      id: band.id,
+      label: band.label,
+      hits: 0,
+      sumRssi: 0,
+      peak: -Infinity,
+    };
+    entry.hits += 1;
+    entry.sumRssi += Number(point.rssi_dbm) || 0;
+    entry.peak = Math.max(entry.peak, Number(point.rssi_dbm) || entry.peak);
+    buckets.set(band.id, entry);
+  }
+  return [...buckets.values()]
+    .map((entry) => ({
+      ...entry,
+      avgRssi: entry.hits ? entry.sumRssi / entry.hits : 0,
+      peak: entry.peak === -Infinity ? null : entry.peak,
+    }))
+    .sort((a, b) => b.hits - a.hits);
+}
+
+function aggregateEmitters(points) {
+  // Quantize frequencies to 1 MHz bins so close hits collapse into one emitter row.
+  const buckets = new Map();
+  for (const point of points) {
+    const freq = Number(point.frequency_hz) || 0;
+    const key = `${Math.round(freq / 1e6)}|${String(point.signal_type || "unknown").toLowerCase()}`;
+    const entry = buckets.get(key) || {
+      frequency_hz: freq,
+      signal_type: point.signal_type || "unknown",
+      hits: 0,
+      sumRssi: 0,
+    };
+    entry.hits += 1;
+    entry.sumRssi += Number(point.rssi_dbm) || 0;
+    buckets.set(key, entry);
+  }
+  return [...buckets.values()]
+    .map((entry) => ({ ...entry, avgRssi: entry.hits ? entry.sumRssi / entry.hits : 0 }))
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, 8);
+}
+
+function commPlanSuggestions(bands) {
+  // Recommend lowest-activity bands among classic comm bands as friendly channels.
+  const commCandidates = new Set(["HF", "VHF", "UHF", "ISM-433", "ISM-915", "ISM-2.4", "ISM-5.8"]);
+  const ranked = bands
+    .filter((band) => commCandidates.has(band.id))
+    .sort((a, b) => a.hits - b.hits);
+  if (!ranked.length) {
+    return ["No comm-band data yet — load more spectrum samples."];
+  }
+  return ranked.slice(0, 4).map((band) => {
+    const verdict = band.hits < 4 ? "quiet — good candidate" : band.hits < 12 ? "moderate" : "congested";
+    return `<strong>${band.label}</strong>: ${band.hits} hits, avg ${band.avgRssi.toFixed(1)} dBm — <em>${verdict}</em>`;
+  });
+}
+
+function renderRfSummary(points, bands) {
+  const node = document.getElementById("rf-summary");
+  if (!node) return;
+  const total = points.length;
+  const uniqueTypes = new Set(points.map((p) => String(p.signal_type || "unknown").toLowerCase()));
+  const strongest = points.reduce(
+    (acc, point) => (point.rssi_dbm > acc ? point.rssi_dbm : acc),
+    -Infinity,
+  );
+  const dominantBand = bands[0]?.label || "n/a";
+  const items = [
+    ["Total samples", total],
+    ["Signal types", uniqueTypes.size],
+    ["Bands", bands.length],
+    ["Strongest", strongest === -Infinity ? "n/a" : `${strongest.toFixed(1)} dBm`],
+    ["Dominant band", dominantBand],
+  ];
+  node.innerHTML = items
+    .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
+    .join("");
+}
+
+function renderBandBreakdown(bands) {
+  renderTableRows(
+    "band-breakdown",
+    bands.map(
+      (band) => `<tr>
+        <td>${band.label}</td>
+        <td>${band.hits}</td>
+        <td>${band.avgRssi.toFixed(1)} dBm</td>
+        <td>${band.peak === null ? "n/a" : band.peak.toFixed(1) + " dBm"}</td>
+      </tr>`,
+    ),
+    "No band activity in current query.",
+    4,
+  );
+}
+
+function renderTopEmitters(emitters) {
+  renderTableRows(
+    "top-emitters",
+    emitters.map(
+      (entry) => `<tr>
+        <td>${formatHz(entry.frequency_hz)}</td>
+        <td><span class="dot" style="background:${colorFor(entry.signal_type)}"></span>${entry.signal_type}</td>
+        <td>${entry.hits}</td>
+        <td>${entry.avgRssi.toFixed(1)} dBm</td>
+      </tr>`,
+    ),
+    "No emitter clusters yet.",
+    4,
+  );
+}
+
+function renderCommSuggestions(bands) {
+  const node = document.getElementById("comm-suggestions");
+  if (!node) return;
+  const items = commPlanSuggestions(bands);
+  node.innerHTML = items.map((item) => `<li>${item}</li>`).join("");
+}
+
+function renderDronePlanning(points, drones) {
+  const protocolBuckets = new Map();
+  for (const drone of drones) {
+    const protocol = String(drone.protocol || "unknown");
+    const entry = protocolBuckets.get(protocol) || {
+      protocol,
+      drones: new Set(),
+      sumRssi: 0,
+      count: 0,
+      bands: new Set(),
+    };
+    entry.drones.add(drone.serial || drone.mac || drone.uid || Math.random().toString(36));
+    entry.sumRssi += Number(drone.rssi_dbm) || 0;
+    entry.count += 1;
+    // Map drone source to spectrum bands using the protocol's typical RF band heuristics.
+    if (/ocusync|droneid/i.test(protocol)) entry.bands.add("ISM-2.4");
+    if (/wifi/i.test(protocol)) entry.bands.add("ISM-2.4");
+    if (/ble|bluetooth/i.test(protocol)) entry.bands.add("ISM-2.4");
+    if (/fpv|analog/i.test(protocol)) entry.bands.add("ISM-5.8");
+    protocolBuckets.set(protocol, entry);
+  }
+
+  // Augment with spectrum-side hits for drone-relevant signal types.
+  const droneSignals = new Set(["droneid", "wifi", "ble", "analog_fpv"]);
+  for (const point of points) {
+    const sig = String(point.signal_type || "").toLowerCase();
+    if (!droneSignals.has(sig)) continue;
+    const protocol = sig;
+    const entry = protocolBuckets.get(protocol) || {
+      protocol,
+      drones: new Set(),
+      sumRssi: 0,
+      count: 0,
+      bands: new Set(),
+    };
+    entry.bands.add(bandFor(point.frequency_hz).id);
+    protocolBuckets.set(protocol, entry);
+  }
+
+  const rows = [...protocolBuckets.values()].map((entry) => ({
+    ...entry,
+    droneCount: entry.drones.size,
+    avgRssi: entry.count ? entry.sumRssi / entry.count : null,
+  }));
+  rows.sort((a, b) => b.droneCount - a.droneCount || b.count - a.count);
+
+  renderTableRows(
+    "drone-band-table",
+    rows.map(
+      (entry) => `<tr>
+        <td>${entry.protocol}</td>
+        <td>${entry.droneCount}</td>
+        <td>${[...entry.bands].join(", ") || "n/a"}</td>
+        <td>${entry.avgRssi === null ? "n/a" : entry.avgRssi.toFixed(1) + " dBm"}</td>
+      </tr>`,
+    ),
+    "No drone protocols observed yet.",
+    4,
+  );
+
+  const node = document.getElementById("drone-suggestions");
+  if (!node) return;
+  const contestedBands = new Set();
+  for (const entry of rows) entry.bands.forEach((b) => contestedBands.add(b));
+  if (!contestedBands.size) {
+    node.innerHTML = `<li>No contested drone bands detected. Default link plan acceptable.</li>`;
+    return;
+  }
+  const allCommBands = ["ISM-433", "ISM-915", "ISM-2.4", "ISM-5.8"];
+  const cleaner = allCommBands.filter((b) => !contestedBands.has(b));
+  const tips = [
+    `Contested by drone traffic: <strong>${[...contestedBands].join(", ")}</strong>`,
+  ];
+  if (cleaner.length) {
+    tips.push(`Prefer drone telemetry / video links on: <strong>${cleaner.join(", ")}</strong>`);
+  } else {
+    tips.push(`All common drone bands are contested — consider frequency hopping or licensed bands.`);
+  }
+  node.innerHTML = tips.map((t) => `<li>${t}</li>`).join("");
+}
+
+function renderHeatmap(points) {
+  rf_last_points = points;
+  const filtered = applyClientFilter(points);
+  renderBandChips(points);
+  renderSignalChips(points);
+  renderHeatmapMap(filtered);
+  if (typeof L === "undefined") renderHeatmapFallback(filtered);
+  const bands = aggregateBands(filtered);
+  renderRfSummary(filtered, bands);
+  renderBandBreakdown(bands);
+  renderTopEmitters(aggregateEmitters(filtered));
+  renderCommSuggestions(bands);
+  renderDronePlanning(filtered, last_drones);
 }
 
 async function refreshHeatmap() {
@@ -249,6 +646,37 @@ document.getElementById("heatmap-filter-form").addEventListener("submit", async 
   const form = new FormData(event.currentTarget);
   Object.assign(heatmap_filter_state, Object.fromEntries(form.entries()));
   await refreshHeatmap();
+});
+
+document.getElementById("heatmap-reset").addEventListener("click", async () => {
+  Object.assign(heatmap_filter_state, {
+    signal_type: "",
+    frequency_hz: "",
+    tolerance_hz: "5000000",
+    limit: "2000",
+  });
+  band_filter_state.bands.clear();
+  band_filter_state.signal_types.clear();
+  document.getElementById("heatmap-filter-form").reset();
+  await refreshHeatmap();
+});
+
+document.getElementById("band-chips").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-band]");
+  if (!target) return;
+  const band = target.dataset.band;
+  if (band_filter_state.bands.has(band)) band_filter_state.bands.delete(band);
+  else band_filter_state.bands.add(band);
+  renderHeatmap(rf_last_points);
+});
+
+document.getElementById("signal-chips").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-signal]");
+  if (!target) return;
+  const sig = target.dataset.signal;
+  if (band_filter_state.signal_types.has(sig)) band_filter_state.signal_types.delete(sig);
+  else band_filter_state.signal_types.add(sig);
+  renderHeatmap(rf_last_points);
 });
 
 document.getElementById("cot-form").addEventListener("submit", async (event) => {

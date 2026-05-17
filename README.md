@@ -95,9 +95,17 @@ The dashboard served on port `8080` provides:
 - system profile and key injection forms
 - transcript viewing with talkgroup/decryption filters
 - drone telemetry tables
-- SVG heatmap point visualization
+- **CloudRF-style RF coverage map** (Leaflet + heat overlay) with band/signal
+  filter chips, spectrum summary, band breakdown, top emitter list, comm-plan
+  channel suggestions, and a drone-telemetry frequency-planning panel
 - live WebSocket panels for waterfall, SIGINT, and FPV streams
 - operator helper forms for CoT emission and CUAS ingest
+
+The Leaflet map assets are bundled under
+`whispercatch_sentinel/dashboard/static/vendor/leaflet/` so the dashboard works
+in air-gapped environments. If the operator browser cannot reach OpenStreetMap
+tile servers, the map still renders heat points; a static SVG plot is provided
+as a final fallback.
 
 ## Test
 

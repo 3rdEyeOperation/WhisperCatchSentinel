@@ -28,4 +28,10 @@ testpaths = ["tests"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"whispercatch_sentinel.dashboard" = ["static/*.html", "static/*.css", "static/*.js"]
+"whispercatch_sentinel.dashboard" = [
+    "static/*.html",
+    "static/*.css",
+    "static/*.js",
+    "static/vendor/leaflet/*",
+    "static/vendor/leaflet/images/*",
+]

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>WhisperCatch Sentinel Dashboard</title>
+    <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
     <link rel="stylesheet" href="/assets/dashboard.css">
   </head>
   <body>
@@ -138,20 +139,98 @@
         </div>
       </section>
 
-      <section class="panel panel-wide">
+      <section class="panel panel-wide rf-panel">
         <div class="panel-header">
-          <h2>Heatmap</h2>
+          <div>
+            <h2>RF Coverage &amp; Frequency Planning</h2>
+            <p class="hint">CloudRF-style geo heatmap of every detected emitter — radio comms, drone C2 and telemetry — for spectrum and comm-plan decisions.</p>
+          </div>
           <button type="button" data-action="refresh-heatmap">Refresh</button>
         </div>
         <form id="heatmap-filter-form" class="inline-form">
-          <input type="text" name="signal_type" placeholder="Signal type">
+          <input type="text" name="signal_type" placeholder="Signal type (e.g. droneid)">
           <input type="number" name="frequency_hz" placeholder="Frequency Hz">
           <input type="number" name="tolerance_hz" value="5000000" min="0">
-          <input type="number" name="limit" value="250" min="1" max="20000">
+          <input type="number" name="limit" value="2000" min="1" max="20000">
           <button type="submit">Apply</button>
+          <button type="button" id="heatmap-reset">Reset</button>
         </form>
-        <svg id="heatmap-plot" viewBox="0 0 640 240" role="img" aria-label="Heatmap point plot"></svg>
-        <p class="hint" id="heatmap-summary">No points loaded.</p>
+        <div class="rf-toolbar">
+          <div class="chip-row" id="band-chips" aria-label="Frequency band filters"></div>
+          <div class="chip-row" id="signal-chips" aria-label="Signal type filters"></div>
+        </div>
+        <div class="rf-layout">
+          <div class="rf-map-wrap">
+            <div id="heatmap-map" class="rf-map" aria-label="RF coverage heatmap"></div>
+            <svg id="heatmap-fallback" class="rf-fallback" viewBox="0 0 640 240" role="img" aria-label="Heatmap point plot fallback"></svg>
+            <div class="rf-legend" aria-label="Heatmap intensity legend">
+              <span class="rf-legend-label">Low</span>
+              <span class="rf-legend-gradient"></span>
+              <span class="rf-legend-label">High</span>
+            </div>
+          </div>
+          <aside class="rf-sidebar">
+            <div class="rf-card">
+              <h3>Spectrum summary</h3>
+              <dl class="metric-grid compact" id="rf-summary"></dl>
+            </div>
+            <div class="rf-card">
+              <h3>Band breakdown</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Band</th>
+                      <th>Hits</th>
+                      <th>Avg RSSI</th>
+                      <th>Peak</th>
+                    </tr>
+                  </thead>
+                  <tbody id="band-breakdown"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="rf-card">
+              <h3>Top emitters</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Frequency</th>
+                      <th>Type</th>
+                      <th>Hits</th>
+                      <th>Avg RSSI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="top-emitters"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="rf-card">
+              <h3>Comm-plan suggestions</h3>
+              <p class="hint">Quieter sub-bands ranked by lowest activity — candidates for friendly comms.</p>
+              <ul class="rf-suggestions" id="comm-suggestions"></ul>
+            </div>
+            <div class="rf-card">
+              <h3>Drone telemetry planning</h3>
+              <p class="hint">Cross-references DroneID / Wi-Fi / BLE telemetry with the spectrum so operators can choose link frequencies away from contested bands.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Protocol</th>
+                      <th>Drones</th>
+                      <th>Bands</th>
+                      <th>Avg RSSI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="drone-band-table"></tbody>
+                </table>
+              </div>
+              <ul class="rf-suggestions" id="drone-suggestions"></ul>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <section class="panel">
@@ -235,6 +314,8 @@
     </main>
 
     <script id="dashboard-config" type="application/json">__WCS_DASHBOARD_CONFIG__</script>
+    <script src="/assets/vendor/leaflet/leaflet.js" defer></script>
+    <script src="/assets/vendor/leaflet/leaflet-heat.js" defer></script>
     <script src="/assets/dashboard.js" defer></script>
   </body>
 </html>
