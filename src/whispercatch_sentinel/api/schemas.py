@@ -13,9 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SYSTEM_PROFILES = {"SCAN_COMBAT", "MONITOR_VOICE", "DRONE_HUNT", "PASSIVE"}
 
-# Valid SDR roles — matches the SdrRole type in config.py.
-SDR_ROLES = {"scout", "action", "aux"}
-
 
 class SystemConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

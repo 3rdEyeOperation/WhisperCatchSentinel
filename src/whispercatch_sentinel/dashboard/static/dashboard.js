@@ -89,6 +89,15 @@ function formatTimestamp(unixSeconds) {
   return new Date(unixSeconds * 1000).toLocaleString();
 }
 
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatGpsState(gps) {
   // The /config/status payload includes a "gps" block: { enabled, has_fix,
   // fix: { lat, lon, mode, ... } }. Render a one-line operator summary so
@@ -992,28 +1001,36 @@ function renderSdrGrid(devices) {
   }
   grid.innerHTML = devices
     .map(
-      (device) => `
+      (device) => {
+        const safeName    = escapeHtml(device.name);
+        const safeRole    = escapeHtml(device.role);
+        const safePurpose = escapeHtml(device.purpose);
+        const safeDetail  = escapeHtml(device.detail);
+        const safeRoleLabel = escapeHtml(SDR_ROLE_LABELS[device.role] || device.role);
+        const encodedName = encodeURIComponent(device.name);
+        return `
         <div class="sdr-card">
           <div class="sdr-card-header">
-            <span class="sdr-card-name">${device.name}</span>
-            <span class="sdr-role-badge sdr-role-${device.role}">${SDR_ROLE_LABELS[device.role] || device.role}</span>
+            <span class="sdr-card-name">${safeName}</span>
+            <span class="sdr-role-badge sdr-role-${safeRole}">${safeRoleLabel}</span>
           </div>
-          <p class="sdr-card-purpose">${device.purpose}</p>
+          <p class="sdr-card-purpose">${safePurpose}</p>
           <div class="sdr-card-caps">
-            ${(device.capabilities || []).map((cap) => `<span class="sdr-cap">${cap}</span>`).join("")}
+            ${(device.capabilities || []).map((cap) => `<span class="sdr-cap">${escapeHtml(cap)}</span>`).join("")}
           </div>
           <p class="sdr-card-status ${device.connected ? "state-ok" : "state-warn"}">
-            ${device.connected ? "● connected" : "○ not detected"} — ${device.detail}
+            ${device.connected ? "● connected" : "○ not detected"} — ${safeDetail}
           </p>
           <div class="sdr-assign-row">
-            <select data-sdr-device="${encodeURIComponent(device.name)}" aria-label="Assign role for ${device.name}">
+            <select data-sdr-device="${encodedName}" aria-label="Assign role for ${safeName}">
               <option value="scout"  ${device.role === "scout"  ? "selected" : ""}>Scout (recon/sweep)</option>
               <option value="action" ${device.role === "action" ? "selected" : ""}>Action (voice/AI)</option>
               <option value="aux"    ${device.role === "aux"    ? "selected" : ""}>Aux/Video (FPV)</option>
             </select>
-            <button type="button" data-sdr-assign="${encodeURIComponent(device.name)}">Assign</button>
+            <button type="button" data-sdr-assign="${encodedName}">Assign</button>
           </div>
-        </div>`,
+        </div>`;
+      },
     )
     .join("");
 }
@@ -1028,25 +1045,28 @@ async function refreshSdr() {
   }
 }
 
-document.getElementById("sdr-grid").addEventListener("click", async (event) => {
-  const btn = event.target.closest("[data-sdr-assign]");
-  if (!btn) return;
-  const deviceEncoded = btn.dataset.sdrAssign;
-  const deviceName = decodeURIComponent(deviceEncoded);
-  const select = document.querySelector(`[data-sdr-device="${deviceEncoded}"]`);
-  if (!select) return;
-  const role = select.value;
-  try {
-    const result = await fetchJson("/api/v1/sdr/assign", null, {
-      method: "PATCH",
-      body: JSON.stringify({ device_name: deviceName, role }),
-    });
-    writeResult("sdr-results", result);
-    await refreshSdr();
-  } catch (error) {
-    writeResult("sdr-results", `Error: ${error.message}`);
-  }
-});
+const _sdrGrid = document.getElementById("sdr-grid");
+if (_sdrGrid) {
+  _sdrGrid.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-sdr-assign]");
+    if (!btn) return;
+    const deviceEncoded = btn.dataset.sdrAssign;
+    const deviceName = decodeURIComponent(deviceEncoded);
+    const select = document.querySelector(`[data-sdr-device="${deviceEncoded}"]`);
+    if (!select) return;
+    const role = select.value;
+    try {
+      const result = await fetchJson("/api/v1/sdr/assign", null, {
+        method: "PATCH",
+        body: JSON.stringify({ device_name: deviceName, role }),
+      });
+      writeResult("sdr-results", result);
+      await refreshSdr();
+    } catch (error) {
+      writeResult("sdr-results", `Error: ${error.message}`);
+    }
+  });
+}
 
 async function refreshAll() {
   try {

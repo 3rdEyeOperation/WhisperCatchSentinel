@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..config import RuntimeConfig, SDR_DEVICES, DeviceProfile, is_tmpfs_ramdisk
+from ..config import RuntimeConfig, SDR_DEVICES, is_tmpfs_ramdisk
 from ..cot import CotGateway, build_cot_event, multicast_cot
 from ..cuas import CuasAggregator, DroneContact
 from ..gps import GpsReceiver
@@ -20,7 +20,7 @@ from ..heatmap import HeatmapEngine
 from ..keys import VolatileKeyVault
 from ..storage import Storage
 from ..streams import StreamBus
-from ..system import collect_status
+from ..system import collect_status, build_sdr_device_entry
 from .schemas import (
     DroneTelemetry,
     GpsFixResponse,
@@ -201,27 +201,13 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
         """Return the three-SDR device list with current role assignments and
         connection status.  Role overrides stored via PATCH /sdr/assign are
         applied on top of the compile-time defaults."""
-        from ..config import detect_device
         role_overrides = deps.storage.get_config("sdr_roles") or {}
-        result: list[SdrDeviceInfo] = []
-        for sdr in SDR_DEVICES:
-            profile = DeviceProfile(
-                name=sdr.name,
-                purpose=sdr.purpose,
-                usb_path_hint=sdr.usb_path_hint,
+        return [
+            SdrDeviceInfo(
+                **build_sdr_device_entry(sdr, role_overrides.get(sdr.name, sdr.role))
             )
-            ds = detect_device(profile)
-            result.append(
-                SdrDeviceInfo(
-                    name=sdr.name,
-                    role=role_overrides.get(sdr.name, sdr.role),
-                    purpose=sdr.purpose,
-                    capabilities=sdr.capabilities,
-                    connected=ds.connected,
-                    detail=ds.detail,
-                )
-            )
-        return result
+            for sdr in SDR_DEVICES
+        ]
 
     @app.patch("/api/v1/sdr/assign", response_model=SdrRoleAssignResponse)
     def assign_sdr_role(payload: SdrRoleAssignRequest) -> SdrRoleAssignResponse:

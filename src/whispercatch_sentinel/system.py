@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .config import HARDWARE_PROFILES, SDR_DEVICES, DeviceProfile, DeviceStatus, detect_device
+from .config import HARDWARE_PROFILES, SDR_DEVICES, DeviceProfile, SdrDeviceConfig, DeviceStatus, detect_device
 
 
 @dataclass(frozen=True)
@@ -62,6 +62,24 @@ def npu_load_pct() -> float | None:
     return None
 
 
+def build_sdr_device_entry(sdr: SdrDeviceConfig, effective_role: str) -> dict:
+    """Probe one SDR device's connection state and return its status dict."""
+    profile = DeviceProfile(
+        name=sdr.name,
+        purpose=sdr.purpose,
+        usb_path_hint=sdr.usb_path_hint,
+    )
+    ds = detect_device(profile)
+    return {
+        "name": sdr.name,
+        "role": effective_role,
+        "purpose": sdr.purpose,
+        "capabilities": sdr.capabilities,
+        "connected": ds.connected,
+        "detail": ds.detail,
+    }
+
+
 def collect_status(ramdisk_ready: bool, sdr_role_overrides: dict | None = None) -> dict:
     status = SystemStatus(
         cpu_temp_c=cpu_temperature_c(),
@@ -72,22 +90,10 @@ def collect_status(ramdisk_ready: bool, sdr_role_overrides: dict | None = None) 
     )
     # Build the three-SDR device list, applying any runtime role overrides.
     overrides = sdr_role_overrides or {}
-    sdr_devices = []
-    for sdr in SDR_DEVICES:
-        profile = DeviceProfile(
-            name=sdr.name,
-            purpose=sdr.purpose,
-            usb_path_hint=sdr.usb_path_hint,
-        )
-        ds = detect_device(profile)
-        sdr_devices.append({
-            "name": sdr.name,
-            "role": overrides.get(sdr.name, sdr.role),
-            "purpose": sdr.purpose,
-            "capabilities": sdr.capabilities,
-            "connected": ds.connected,
-            "detail": ds.detail,
-        })
+    sdr_devices = [
+        build_sdr_device_entry(sdr, overrides.get(sdr.name, sdr.role))
+        for sdr in SDR_DEVICES
+    ]
     return {
         "cpu_temp_c": status.cpu_temp_c,
         "npu_load_pct": status.npu_load_pct,
