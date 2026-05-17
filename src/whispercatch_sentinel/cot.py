@@ -38,9 +38,6 @@ def build_cot_event(uid: str, lat: float, lon: float, hae: float = 0.0) -> str:
 
 def multicast_cot(group: str, port: int, payload: str) -> None:
     data = payload.encode("utf-8")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    try:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
         sock.sendto(data, (group, port))
-    finally:
-        sock.close()

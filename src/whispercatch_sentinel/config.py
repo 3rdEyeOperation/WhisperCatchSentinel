@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from os.path import normpath
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,7 +82,7 @@ def is_tmpfs_ramdisk(path: str) -> bool:
         with open("/proc/mounts", "r", encoding="utf-8") as mounts:
             return any(
                 len(parts := line.split()) >= 3
-                and parts[1] == path
+                and normpath(parts[1]) == normpath(path)
                 and parts[2] == "tmpfs"
                 for line in mounts
             )
