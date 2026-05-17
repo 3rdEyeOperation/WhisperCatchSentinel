@@ -144,7 +144,7 @@ class SigintPipeline:
     ) -> Path:
         # Work strictly inside the tmpfs RAM-disk so cleartext never lands on
         # persistent storage. Falls back to /dev/shm if the vault is elsewhere.
-        tmpfs_dir = self._vault._path.parent  # noqa: SLF001 — intentional internal use
+        tmpfs_dir = self._vault.tmpfs_dir
         out_path = Path(tempfile.mkstemp(prefix="wcs-clear-", suffix=".wav", dir=tmpfs_dir)[1])
         args = [
             self._openssl_binary,

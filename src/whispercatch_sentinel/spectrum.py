@@ -9,6 +9,7 @@ as raw ``(frequency, rssi)`` evidence.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Protocol
@@ -116,7 +117,10 @@ class SpectrumPipeline:
             log.debug("sweeping %s (%d-%d Hz)", band, start, stop)
             try:
                 samples = await self._client.sweep(start, stop, step)
-            except Exception:  # noqa: BLE001 — pipeline must survive transient SDRangel errors
+            except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError):
+                # SDRangel is reached over the local REST socket; treat
+                # network-level errors as transient and continue with the
+                # next band so a single hiccup never halts the sweep loop.
                 log.exception("sweep failed for %s; continuing", band)
                 continue
             for sample in samples:
@@ -136,7 +140,7 @@ class SpectrumPipeline:
             channel_id = await self._client.start_atv_channel(
                 center, classification.bandwidth_hz
             )
-        except Exception:
+        except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError):
             log.exception("failed to start ATV channel at %d Hz", center)
             return
         self._active_channels[center] = channel_id
@@ -146,6 +150,6 @@ class SpectrumPipeline:
         for center, channel_id in list(self._active_channels.items()):
             try:
                 await self._client.stop_channel(channel_id)
-            except Exception:
+            except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError):
                 log.exception("failed to stop ATV channel %s", channel_id)
             self._active_channels.pop(center, None)

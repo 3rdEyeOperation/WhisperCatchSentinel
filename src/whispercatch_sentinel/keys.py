@@ -150,6 +150,12 @@ class VolatileKeyVault:
             self._write({})
         return count
 
+    @property
+    def tmpfs_dir(self) -> Path:
+        """Directory holding the vault — useful for staging cleartext audio
+        that must remain RAM-resident alongside the keys."""
+        return self._path.parent
+
     def inject_many(self, entries: Iterable[dict[str, str]]) -> list[KeyMetadata]:
         results: list[KeyMetadata] = []
         for entry in entries:

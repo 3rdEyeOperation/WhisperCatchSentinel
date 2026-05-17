@@ -1,4 +1,7 @@
+import asyncio
+
 from whispercatch_sentinel.spectrum import (
+    SpectrumPipeline,
     SweepSample,
     classify_sample,
 )
@@ -37,11 +40,6 @@ def test_classify_weak_signal_as_unknown_even_if_wide() -> None:
         modulation_hint="fm",
     )
     assert classify_sample(sample).kind == "unknown"
-
-
-import asyncio  # noqa: E402
-
-from whispercatch_sentinel.spectrum import SpectrumPipeline
 
 
 class _FakeClient:

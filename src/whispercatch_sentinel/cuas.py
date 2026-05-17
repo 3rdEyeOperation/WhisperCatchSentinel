@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Iterable
 
 
@@ -106,11 +106,3 @@ class CuasAggregator:
                 key=lambda c: c.captured_at,
                 reverse=True,
             )
-
-    def with_airframe(self, airframe: str) -> "CuasAggregator":
-        """Convenience for tests: clone with overridden airframe defaults."""
-        clone = CuasAggregator(ttl_seconds=self.ttl_seconds)
-        with self._lock:
-            for key, contact in self._contacts.items():
-                clone._contacts[key] = replace(contact, airframe=airframe)
-        return clone
