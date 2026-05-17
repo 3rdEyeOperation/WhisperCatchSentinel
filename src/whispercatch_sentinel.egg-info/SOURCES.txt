@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/whispercatch_sentinel/__init__.py
+src/whispercatch_sentinel/app.py
+src/whispercatch_sentinel/config.py
+src/whispercatch_sentinel/cot.py
+src/whispercatch_sentinel.egg-info/PKG-INFO
+src/whispercatch_sentinel.egg-info/SOURCES.txt
+src/whispercatch_sentinel.egg-info/dependency_links.txt
+src/whispercatch_sentinel.egg-info/requires.txt
+src/whispercatch_sentinel.egg-info/top_level.txt
+tests/test_app.py
+tests/test_cot.py
