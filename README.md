@@ -28,6 +28,7 @@ The `whispercatch_sentinel` package implements each block:
 | `cuas`       | DroneID / Wi-Fi / BLE aggregation with dedup by serial/MAC    |
 | `sigint`     | Trunk Recorder hand-off, OpenSSL decrypt, whisper.cpp output  |
 | `heatmap`    | Friis-based RSSI distance + GroundOverlay-ready point arrays  |
+| `gps`        | gpsd JSON client + background fix cache for live sensor coords|
 | `cot`        | TAK-schema CoT XML builders + multicast gateway               |
 | `keys`       | Volatile tmpfs key vault (RED-side only)                      |
 | `storage`    | SQLite persistence for configs / transcripts / heatmap points |
@@ -52,6 +53,9 @@ WS    /api/v1/stream/fpv/video       # MJPEG / binary FPV frames
 
 POST  /api/v1/cot                    # ad-hoc multicast CoT emission
 POST  /api/v1/cuas/ingest            # operator helper for injecting contacts
+
+GET   /api/v1/telemetry/position     # live sensor position (gpsd fix) or null
+POST  /api/v1/telemetry/observation  # record a heatmap point — auto-stamps with live gpsd fix
 ```
 
 All endpoints respond in strict JSON. Cryptographic keys are stored exclusively
@@ -115,6 +119,52 @@ as a final fallback. Cesium.js (used only when the operator switches to the
 **3D globe** view) is loaded on demand from the official jsDelivr CDN — it is
 too large (~100 MB unpacked) to vendor; when the CDN is unreachable, the panel
 remains on the offline 2D Leaflet view and the operator is notified inline.
+
+## Sensor positioning (gpsd)
+
+The sensor node uses [gpsd](https://gpsd.io/) as the canonical source of its
+own location, so every heatmap point can be stamped with the actual antenna
+position rather than a hand-typed coordinate.
+
+Bring up gpsd on the sensor host (Raspberry Pi, NUC, …):
+
+```bash
+sudo apt install gpsd gpsd-clients
+sudo systemctl enable --now gpsd
+# Verify with: gpspipe -w -n 5
+```
+
+Then enable the integration when constructing the backend dependencies (set
+`gpsd_enabled=True` on `RuntimeConfig`) and start the receiver thread once
+the API process is up:
+
+```python
+deps = _build_default_dependencies()
+# In real deployments — call this from your start-up script:
+if deps.gps is not None:
+    deps.gps.start()
+```
+
+Behaviour:
+
+- `GET /api/v1/telemetry/position` returns the latest TPV fix as JSON, or
+  `null` when gpsd is disabled, unreachable, or has no fix yet.
+- `GET /api/v1/config/status` includes a `gps` block (`enabled`, `running`,
+  `has_fix`, `fix`) so the dashboard can show a one-line "Sensor GPS" chip
+  and plot a bullseye anchor marker on both the 2D map and the 3D globe.
+- `POST /api/v1/telemetry/observation` records a heatmap evidence ring. It
+  uses the live gpsd fix as the default `sensor_lat`/`sensor_lon`; operators
+  may still pass explicit coordinates to override. If neither is available
+  the call is rejected with `409` rather than silently writing rotten
+  `(0, 0)` points — corrupting downstream heatmap queries would be worse
+  than failing loudly.
+- Fixes older than `fix_ttl_s` (default 30 s) are treated as stale and not
+  served, so a sensor that loses sky view stops geo-stamping new
+  observations instead of drifting.
+
+The integration uses no third-party Python packages — gpsd's line-delimited
+JSON protocol is spoken directly over TCP — so the air-gapped sensor image
+stays small.
 
 ## Test
 

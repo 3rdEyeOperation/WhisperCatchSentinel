@@ -89,6 +89,16 @@ function formatTimestamp(unixSeconds) {
   return new Date(unixSeconds * 1000).toLocaleString();
 }
 
+function formatGpsState(gps) {
+  // The /config/status payload includes a "gps" block: { enabled, has_fix,
+  // fix: { lat, lon, mode, ... } }. Render a one-line operator summary so
+  // they can tell at a glance whether the heatmap is geo-stamped.
+  if (!gps || !gps.enabled) return "disabled";
+  if (!gps.has_fix || !gps.fix) return "no fix";
+  const fix = gps.fix;
+  return `${fix.mode}D ${fix.lat.toFixed(4)}, ${fix.lon.toFixed(4)}`;
+}
+
 function coords(lat, lon) {
   if (lat === null || lat === undefined || lon === null || lon === undefined) {
     return "n/a";
@@ -150,6 +160,7 @@ async function refreshStatus() {
       status.active_profile?.profile || "none",
     ],
     ["Keys loaded", String((status.keys_loaded || []).length)],
+    ["Sensor GPS", formatGpsState(status.gps)],
   ];
   document.getElementById("status-metrics").innerHTML = metrics
     .map(
@@ -157,6 +168,9 @@ async function refreshStatus() {
         `<div><dt>${label}</dt><dd>${value}</dd></div>`,
     )
     .join("");
+  // Keep the heatmap anchor in sync with the live gpsd state.
+  last_sensor_fix = status.gps?.fix || null;
+  renderSensorMarker(last_sensor_fix);
   renderTableRows(
     "device-table",
     (status.devices || []).map(
@@ -212,8 +226,10 @@ async function refreshDrones() {
 let rf_map = null;
 let rf_heat_layer = null;
 let rf_marker_layer = null;
+let rf_sensor_marker = null;
 let rf_last_points = [];
 let last_drones = [];
+let last_sensor_fix = null;
 
 // View-mode state. "2d" uses the vendored Leaflet map (offline-safe default),
 // "3d" lazy-loads Cesium.js from the official CDN for a richer 3D heatmap.
@@ -297,10 +313,35 @@ function cesiumColorFor(signal_type, intensity) {
   return color.withAlpha(0.45 + Math.min(0.5, Math.max(0, intensity * 0.55)));
 }
 
+function addCesiumSensorMarker(viewer, fix) {
+  if (!viewer || !fix) return;
+  viewer.entities.add({
+    name: "Sensor position (gpsd)",
+    position: Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat, fix.altitude_m || 0),
+    point: {
+      pixelSize: 12,
+      color: Cesium.Color.fromCssColorString("#59c1ff"),
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 2,
+    },
+    label: {
+      text: "SENSOR",
+      font: "11px sans-serif",
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      pixelOffset: new Cesium.Cartesian2(0, -18),
+    },
+  });
+}
+
 function renderHeatmapCesium(points) {
   const viewer = ensureCesium();
   if (!viewer) return;
   viewer.entities.removeAll();
+  // Re-add the sensor anchor on every redraw (entities.removeAll wipes it).
+  addCesiumSensorMarker(viewer, last_sensor_fix);
   if (!points.length) {
     setViewStatus("3D globe ready — no points in current filter.", "warn");
     return;
@@ -462,6 +503,45 @@ function renderHeatmapMap(points) {
     const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lon]));
     map.fitBounds(bounds.pad(0.2), { maxZoom: 14, animate: false });
   }
+  // Re-stamp the sensor anchor (if any) so it always sits above heat blobs.
+  renderSensorMarker(last_sensor_fix);
+}
+
+function renderSensorMarker(fix) {
+  const map = ensureMap();
+  if (!map) return;
+  if (rf_sensor_marker) {
+    rf_sensor_marker.remove();
+    rf_sensor_marker = null;
+  }
+  if (!fix) return;
+  // A small bullseye so the operator can instantly spot where the sensor is
+  // sitting on the map, regardless of how dense the heat blobs are.
+  rf_sensor_marker = L.layerGroup([
+    L.circleMarker([fix.lat, fix.lon], {
+      radius: 7,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#59c1ff",
+      fillOpacity: 0.9,
+    }),
+    L.circleMarker([fix.lat, fix.lon], {
+      radius: 16,
+      color: "#59c1ff",
+      weight: 1,
+      fillOpacity: 0.0,
+      dashArray: "3,4",
+    }),
+  ]).addTo(map);
+  const ageS = ((Date.now() / 1000) - (fix.received_at || 0)).toFixed(0);
+  rf_sensor_marker.eachLayer((layer) =>
+    layer.bindPopup(
+      `<strong>Sensor position</strong><br>gpsd mode ${fix.mode}` +
+        `<br>${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)}` +
+        (fix.altitude_m != null ? `<br>alt ${fix.altitude_m.toFixed(1)} m` : "") +
+        `<br>fix age ${ageS}s`,
+    ),
+  );
 }
 
 function renderHeatmapFallback(points) {

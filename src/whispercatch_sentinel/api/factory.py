@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from ..config import RuntimeConfig, is_tmpfs_ramdisk
 from ..cot import CotGateway, build_cot_event, multicast_cot
 from ..cuas import CuasAggregator, DroneContact
+from ..gps import GpsReceiver
 from ..heatmap import HeatmapEngine
 from ..keys import VolatileKeyVault
 from ..storage import Storage
@@ -21,6 +22,8 @@ from ..streams import StreamBus
 from ..system import collect_status
 from .schemas import (
     DroneTelemetry,
+    GpsFixResponse,
+    HeatmapObservationRequest,
     HeatmapResponse,
     KeyInjectionRequest,
     KeyInjectionResponse,
@@ -39,6 +42,10 @@ class AppDependencies:
     heatmap: HeatmapEngine
     bus: StreamBus
     gateway: CotGateway
+    # ``gps`` is optional so unit tests and air-gapped dev boxes don't need
+    # gpsd running. When present, the API serves the live fix and uses it as
+    # the default location for ``POST /api/v1/telemetry/observation``.
+    gps: GpsReceiver | None = None
 
 
 def _build_default_dependencies(
@@ -57,6 +64,11 @@ def _build_default_dependencies(
     heatmap = HeatmapEngine(storage)
     bus = StreamBus()
     gateway = CotGateway(config.cot_multicast_group, config.cot_multicast_port)
+    gps = (
+        GpsReceiver(host=config.gpsd_host, port=config.gpsd_port)
+        if config.gpsd_enabled
+        else None
+    )
     return AppDependencies(
         config=config,
         storage=storage,
@@ -65,6 +77,7 @@ def _build_default_dependencies(
         heatmap=heatmap,
         bus=bus,
         gateway=gateway,
+        gps=gps,
     )
 
 
@@ -118,6 +131,18 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
         body = collect_status(ramdisk_ready=ramdisk_ready)
         body["keys_loaded"] = [meta.key_id for meta in deps.vault.list_metadata()]
         body["active_profile"] = deps.storage.get_config("system_profile")
+        # Surface the gpsd-backed sensor position so the dashboard can show
+        # an "anchor" marker and operators can tell at a glance whether the
+        # node is geo-aware right now.
+        gps_fix = deps.gps.latest_fix() if deps.gps is not None else None
+        body["gps"] = {
+            "enabled": deps.gps is not None,
+            "running": bool(deps.gps and deps.gps.running),
+            "host": deps.config.gpsd_host,
+            "port": deps.config.gpsd_port,
+            "has_fix": gps_fix is not None,
+            "fix": gps_fix.to_dict() if gps_fix is not None else None,
+        }
         return body
 
     # ------------------------------------------------------------------
@@ -175,6 +200,63 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
             limit=limit,
         )
         return HeatmapResponse(count=len(rows), points=rows)
+
+    @app.get("/api/v1/telemetry/position")
+    def telemetry_position() -> GpsFixResponse | None:
+        """Return the latest gpsd fix, or ``null`` when no fix is available.
+
+        The dashboard polls this to plot the sensor anchor marker on the
+        heatmap so the operator can visualise the receiver's position.
+        """
+        if deps.gps is None:
+            return None
+        fix = deps.gps.latest_fix()
+        if fix is None:
+            return None
+        return GpsFixResponse(**fix.to_dict())
+
+    @app.post("/api/v1/telemetry/observation")
+    def record_observation(payload: HeatmapObservationRequest) -> dict[str, Any]:
+        """Record a heatmap observation, auto-stamping with the live gpsd fix.
+
+        Either ``sensor_lat`` + ``sensor_lon`` must be supplied explicitly,
+        or gpsd must be running with a current fix. We never silently fall
+        back to (0, 0) — a bad geo-stamp would corrupt every downstream
+        heatmap query, so we 409 instead.
+        """
+        sensor_lat = payload.sensor_lat
+        sensor_lon = payload.sensor_lon
+        used_gps = False
+        if sensor_lat is None or sensor_lon is None:
+            fix = deps.gps.latest_fix() if deps.gps is not None else None
+            if fix is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "no sensor position available: supply sensor_lat/"
+                        "sensor_lon, or enable gpsd and wait for a fix"
+                    ),
+                )
+            sensor_lat = fix.lat
+            sensor_lon = fix.lon
+            used_gps = True
+        ring = deps.heatmap.record(
+            sensor_lat=sensor_lat,
+            sensor_lon=sensor_lon,
+            frequency_hz=payload.frequency_hz,
+            rssi_dbm=payload.rssi_dbm,
+            signal_type=payload.signal_type,
+            tx_power_dbm=payload.tx_power_dbm,
+            ring_samples=payload.ring_samples,
+            captured_at=payload.captured_at,
+        )
+        return {
+            "status": "ok",
+            "points_recorded": len(ring),
+            "sensor_lat": sensor_lat,
+            "sensor_lon": sensor_lon,
+            "source": "gpsd" if used_gps else "request",
+        }
 
     # ------------------------------------------------------------------
     # CoT gateway helper (one-shot POST)
