@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .config import HARDWARE_PROFILES, DeviceStatus, detect_device
+from .config import HARDWARE_PROFILES, SDR_DEVICES, DeviceProfile, DeviceStatus, detect_device
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def npu_load_pct() -> float | None:
     return None
 
 
-def collect_status(ramdisk_ready: bool) -> dict:
+def collect_status(ramdisk_ready: bool, sdr_role_overrides: dict | None = None) -> dict:
     status = SystemStatus(
         cpu_temp_c=cpu_temperature_c(),
         npu_load_pct=npu_load_pct(),
@@ -70,10 +70,29 @@ def collect_status(ramdisk_ready: bool) -> dict:
         devices=[detect_device(profile) for profile in HARDWARE_PROFILES],
         ramdisk_ready=ramdisk_ready,
     )
+    # Build the three-SDR device list, applying any runtime role overrides.
+    overrides = sdr_role_overrides or {}
+    sdr_devices = []
+    for sdr in SDR_DEVICES:
+        profile = DeviceProfile(
+            name=sdr.name,
+            purpose=sdr.purpose,
+            usb_path_hint=sdr.usb_path_hint,
+        )
+        ds = detect_device(profile)
+        sdr_devices.append({
+            "name": sdr.name,
+            "role": overrides.get(sdr.name, sdr.role),
+            "purpose": sdr.purpose,
+            "capabilities": sdr.capabilities,
+            "connected": ds.connected,
+            "detail": ds.detail,
+        })
     return {
         "cpu_temp_c": status.cpu_temp_c,
         "npu_load_pct": status.npu_load_pct,
         "cpu_load_pct": status.cpu_load_pct,
         "ramdisk_ready": status.ramdisk_ready,
         "devices": [asdict(d) for d in status.devices],
+        "sdr_devices": sdr_devices,
     }

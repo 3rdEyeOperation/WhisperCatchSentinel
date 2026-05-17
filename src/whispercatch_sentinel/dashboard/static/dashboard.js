@@ -974,10 +974,85 @@ document.getElementById("cuas-form").addEventListener("submit", async (event) =>
   }
 });
 
+// ------------------------------------------------------------------
+// SDR Radio Assignment panel
+// ------------------------------------------------------------------
+const SDR_ROLE_LABELS = {
+  scout:  "Scout",
+  action: "Action",
+  aux:    "Aux/Video",
+};
+
+function renderSdrGrid(devices) {
+  const grid = document.getElementById("sdr-grid");
+  if (!grid) return;
+  if (!devices || !devices.length) {
+    grid.innerHTML = `<p class="hint">No SDR devices reported by backend.</p>`;
+    return;
+  }
+  grid.innerHTML = devices
+    .map(
+      (device) => `
+        <div class="sdr-card">
+          <div class="sdr-card-header">
+            <span class="sdr-card-name">${device.name}</span>
+            <span class="sdr-role-badge sdr-role-${device.role}">${SDR_ROLE_LABELS[device.role] || device.role}</span>
+          </div>
+          <p class="sdr-card-purpose">${device.purpose}</p>
+          <div class="sdr-card-caps">
+            ${(device.capabilities || []).map((cap) => `<span class="sdr-cap">${cap}</span>`).join("")}
+          </div>
+          <p class="sdr-card-status ${device.connected ? "state-ok" : "state-warn"}">
+            ${device.connected ? "● connected" : "○ not detected"} — ${device.detail}
+          </p>
+          <div class="sdr-assign-row">
+            <select data-sdr-device="${encodeURIComponent(device.name)}" aria-label="Assign role for ${device.name}">
+              <option value="scout"  ${device.role === "scout"  ? "selected" : ""}>Scout (recon/sweep)</option>
+              <option value="action" ${device.role === "action" ? "selected" : ""}>Action (voice/AI)</option>
+              <option value="aux"    ${device.role === "aux"    ? "selected" : ""}>Aux/Video (FPV)</option>
+            </select>
+            <button type="button" data-sdr-assign="${encodeURIComponent(device.name)}">Assign</button>
+          </div>
+        </div>`,
+    )
+    .join("");
+}
+
+async function refreshSdr() {
+  try {
+    const devices = await fetchJson("/api/v1/sdr/devices");
+    renderSdrGrid(devices);
+  } catch (error) {
+    const grid = document.getElementById("sdr-grid");
+    if (grid) grid.innerHTML = `<p class="hint state-bad">Could not load SDR devices: ${error.message}</p>`;
+  }
+}
+
+document.getElementById("sdr-grid").addEventListener("click", async (event) => {
+  const btn = event.target.closest("[data-sdr-assign]");
+  if (!btn) return;
+  const deviceEncoded = btn.dataset.sdrAssign;
+  const deviceName = decodeURIComponent(deviceEncoded);
+  const select = document.querySelector(`[data-sdr-device="${deviceEncoded}"]`);
+  if (!select) return;
+  const role = select.value;
+  try {
+    const result = await fetchJson("/api/v1/sdr/assign", null, {
+      method: "PATCH",
+      body: JSON.stringify({ device_name: deviceName, role }),
+    });
+    writeResult("sdr-results", result);
+    await refreshSdr();
+  } catch (error) {
+    writeResult("sdr-results", `Error: ${error.message}`);
+  }
+});
+
 async function refreshAll() {
   try {
     await Promise.all([
       refreshStatus(),
+      refreshSdr(),
       refreshTranscripts(),
       refreshDrones(),
       refreshHeatmap(),
@@ -1051,6 +1126,9 @@ connectStream({
 document
   .querySelector('[data-action="refresh-status"]')
   .addEventListener("click", () => refreshStatus());
+document
+  .querySelector('[data-action="refresh-sdr"]')
+  .addEventListener("click", () => refreshSdr());
 document
   .querySelector('[data-action="refresh-transcripts"]')
   .addEventListener("click", () => refreshTranscripts());

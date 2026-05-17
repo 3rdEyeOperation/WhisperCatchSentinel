@@ -13,6 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SYSTEM_PROFILES = {"SCAN_COMBAT", "MONITOR_VOICE", "DRONE_HUNT", "PASSIVE"}
 
+# Valid SDR roles — matches the SdrRole type in config.py.
+SDR_ROLES = {"scout", "action", "aux"}
+
 
 class SystemConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -43,6 +46,32 @@ class KeyInjectionRequest(BaseModel):
 class KeyInjectionResponse(BaseModel):
     accepted: list[str]
     refused: list[dict]
+
+
+class SdrDeviceInfo(BaseModel):
+    """Runtime state of one SDR radio including its assigned operator role."""
+
+    name: str
+    role: Literal["scout", "action", "aux"]
+    purpose: str
+    capabilities: list[str]
+    connected: bool
+    detail: str
+
+
+class SdrRoleAssignRequest(BaseModel):
+    """Reassign an SDR device to a different operator role at runtime."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_name: str = Field(min_length=1, max_length=128)
+    role: Literal["scout", "action", "aux"]
+
+
+class SdrRoleAssignResponse(BaseModel):
+    status: str
+    device_name: str
+    role: str
 
 
 class DroneTelemetry(BaseModel):

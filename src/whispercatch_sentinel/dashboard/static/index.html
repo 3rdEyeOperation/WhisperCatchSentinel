@@ -43,6 +43,16 @@
 
       <section class="panel">
         <div class="panel-header">
+          <h2>SDR Radio Assignment</h2>
+          <button type="button" data-action="refresh-sdr">Refresh</button>
+        </div>
+        <p class="hint">Three-SDR operator setup. Each radio has a role in the guided intercept workflow. Reassign roles by selecting a new role for any device.</p>
+        <div class="sdr-grid" id="sdr-grid"></div>
+        <pre class="result-box" id="sdr-results">Ready.</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
           <h2>System configuration</h2>
         </div>
         <form id="system-config-form" class="stack-form">

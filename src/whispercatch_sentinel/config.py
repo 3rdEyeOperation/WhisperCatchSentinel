@@ -4,14 +4,32 @@ import os
 from os.path import normpath
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+# SDR role type — three distinct roles that map to the guided operator workflow.
+#   scout  : wideband sweep / recon / environmental awareness (typically HackRF One)
+#   action : focused follow-up on a selected target, e.g. voice/transcription (RTL-SDR V4)
+#   aux    : secondary follow-up channel, e.g. analog FPV / video (HackRF One Aux)
+SdrRole = Literal["scout", "action", "aux"]
 
 
 class DeviceProfile(BaseModel):
     name: str
     purpose: str
     usb_path_hint: str
+
+
+class SdrDeviceConfig(BaseModel):
+    """Configuration descriptor for one SDR radio with an assigned operator role."""
+
+    name: str
+    purpose: str
+    usb_path_hint: str
+    role: SdrRole
+    capabilities: list[str] = []
 
 
 class RuntimeConfig(BaseModel):
@@ -46,6 +64,11 @@ HARDWARE_PROFILES = [
         usb_path_hint="/dev/bus/usb",
     ),
     DeviceProfile(
+        name="HackRF One (Aux)",
+        purpose="Analog FPV / secondary wideband",
+        usb_path_hint="/dev/bus/usb",
+    ),
+    DeviceProfile(
         name="Alfa USB Wi-Fi",
         purpose="802.11 monitor mode",
         usb_path_hint="/sys/class/net",
@@ -59,6 +82,34 @@ HARDWARE_PROFILES = [
         name="gpsd GPS receiver",
         purpose="Live sensor position for heatmap stamping (USB/UART GPS via gpsd)",
         usb_path_hint="/dev/gpsd",
+    ),
+]
+
+# Three-SDR operator setup.  Each radio has a default role that maps to the
+# guided workflow.  Operators can override role assignments at runtime via
+# the PATCH /api/v1/sdr/assign endpoint; the defaults below are what the
+# system boots with on a fresh deploy.
+SDR_DEVICES: list[SdrDeviceConfig] = [
+    SdrDeviceConfig(
+        name="HackRF One",
+        purpose="Wideband scout: sweep/recon, DJI DroneID, analog FPV (HF–6 GHz)",
+        usb_path_hint="/dev/bus/usb",
+        role="scout",
+        capabilities=["wideband_sweep", "analog_fpv", "droneid"],
+    ),
+    SdrDeviceConfig(
+        name="RTL-SDR V4",
+        purpose="Action radio: VHF/UHF voice monitoring and AI transcription (P25/DMR)",
+        usb_path_hint="/dev/bus/usb",
+        role="action",
+        capabilities=["vhf_voice", "uhf_voice", "p25", "dmr", "transcription"],
+    ),
+    SdrDeviceConfig(
+        name="HackRF One (Aux)",
+        purpose="Aux/video radio: analog FPV decode, secondary wideband channel",
+        usb_path_hint="/dev/bus/usb",
+        role="aux",
+        capabilities=["analog_fpv", "wideband_sweep", "atv"],
     ),
 ]
 

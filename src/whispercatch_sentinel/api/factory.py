@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..config import RuntimeConfig, is_tmpfs_ramdisk
+from ..config import RuntimeConfig, SDR_DEVICES, DeviceProfile, is_tmpfs_ramdisk
 from ..cot import CotGateway, build_cot_event, multicast_cot
 from ..cuas import CuasAggregator, DroneContact
 from ..gps import GpsReceiver
@@ -28,6 +28,9 @@ from .schemas import (
     HeatmapResponse,
     KeyInjectionRequest,
     KeyInjectionResponse,
+    SdrDeviceInfo,
+    SdrRoleAssignRequest,
+    SdrRoleAssignResponse,
     SystemConfigRequest,
 )
 
@@ -172,7 +175,8 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
     @app.get("/api/v1/config/status")
     def system_status() -> dict[str, Any]:
         ramdisk_ready = is_tmpfs_ramdisk(deps.config.tmpfs_path)
-        body = collect_status(ramdisk_ready=ramdisk_ready)
+        sdr_role_overrides = deps.storage.get_config("sdr_roles") or {}
+        body = collect_status(ramdisk_ready=ramdisk_ready, sdr_role_overrides=sdr_role_overrides)
         body["keys_loaded"] = [meta.key_id for meta in deps.vault.list_metadata()]
         body["active_profile"] = deps.storage.get_config("system_profile")
         # Surface the gpsd-backed sensor position so the dashboard can show
@@ -188,6 +192,60 @@ def create_app(deps: AppDependencies | None = None) -> FastAPI:
             "fix": gps_fix.to_dict() if gps_fix is not None else None,
         }
         return body
+
+    # ------------------------------------------------------------------
+    # SDR device management endpoints
+    # ------------------------------------------------------------------
+    @app.get("/api/v1/sdr/devices", response_model=list[SdrDeviceInfo])
+    def list_sdr_devices() -> list[SdrDeviceInfo]:
+        """Return the three-SDR device list with current role assignments and
+        connection status.  Role overrides stored via PATCH /sdr/assign are
+        applied on top of the compile-time defaults."""
+        from ..config import detect_device
+        role_overrides = deps.storage.get_config("sdr_roles") or {}
+        result: list[SdrDeviceInfo] = []
+        for sdr in SDR_DEVICES:
+            profile = DeviceProfile(
+                name=sdr.name,
+                purpose=sdr.purpose,
+                usb_path_hint=sdr.usb_path_hint,
+            )
+            ds = detect_device(profile)
+            result.append(
+                SdrDeviceInfo(
+                    name=sdr.name,
+                    role=role_overrides.get(sdr.name, sdr.role),
+                    purpose=sdr.purpose,
+                    capabilities=sdr.capabilities,
+                    connected=ds.connected,
+                    detail=ds.detail,
+                )
+            )
+        return result
+
+    @app.patch("/api/v1/sdr/assign", response_model=SdrRoleAssignResponse)
+    def assign_sdr_role(payload: SdrRoleAssignRequest) -> SdrRoleAssignResponse:
+        """Reassign an SDR device to a different operator role at runtime.
+
+        All three roles (scout, action, aux) may be freely distributed among
+        the available devices.  The assignment persists in storage for the
+        lifetime of the session.
+        """
+        device_names = {sdr.name for sdr in SDR_DEVICES}
+        if payload.device_name not in device_names:
+            raise HTTPException(
+                status_code=404,
+                detail=f"SDR device not found: {payload.device_name!r}. "
+                       f"Known devices: {sorted(device_names)}",
+            )
+        role_overrides = dict(deps.storage.get_config("sdr_roles") or {})
+        role_overrides[payload.device_name] = payload.role
+        deps.storage.set_config("sdr_roles", role_overrides, time.time())
+        return SdrRoleAssignResponse(
+            status="ok",
+            device_name=payload.device_name,
+            role=payload.role,
+        )
 
     # ------------------------------------------------------------------
     # Telemetry endpoints
