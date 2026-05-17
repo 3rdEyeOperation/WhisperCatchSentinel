@@ -14,9 +14,9 @@ def test_health_endpoint_is_headless_and_cloud_free() -> None:
     assert body["cloud_processing"] is False
 
 
-def test_runtime_endpoint_exposes_required_device_profiles() -> None:
+def test_status_endpoint_exposes_required_device_profiles() -> None:
     client = TestClient(create_app())
-    response = client.get("/api/v1/runtime")
+    response = client.get("/api/v1/config/status")
 
     assert response.status_code == 200
     body = response.json()
@@ -37,7 +37,7 @@ def test_cot_endpoint_sends_event(monkeypatch) -> None:
         sent["port"] = port
         sent["payload"] = payload
 
-    monkeypatch.setattr("whispercatch_sentinel.app.multicast_cot", fake_send)
+    monkeypatch.setattr("whispercatch_sentinel.api.factory.multicast_cot", fake_send)
 
     client = TestClient(create_app())
     response = client.post(
