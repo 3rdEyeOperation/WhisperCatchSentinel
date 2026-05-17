@@ -5,14 +5,14 @@ const backendBaseUrl = dashboardConfig.backendBaseUrl.replace(/\/$/, "");
 const backendHttpBase = backendBaseUrl;
 const backendWsBase = backendHttpBase.replace(/^http/i, "ws");
 
-const transcriptFilterState = {
+const transcript_filter_state = {
   talkgroup: "",
   decrypted: "",
   clear: "",
   limit: "100",
 };
 
-const heatmapFilterState = {
+const heatmap_filter_state = {
   signal_type: "",
   frequency_hz: "",
   tolerance_hz: "5000000",
@@ -68,10 +68,10 @@ function writeResult(id, payload) {
     typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 }
 
-function renderTableRows(id, rows, emptyMessage) {
+function renderTableRows(id, rows, emptyMessage, colspan = 1) {
   const tbody = document.getElementById(id);
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5">${emptyMessage}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colspan}">${emptyMessage}</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.join("");
@@ -113,11 +113,12 @@ async function refreshStatus() {
       </tr>`,
     ),
     "No hardware profiles reported.",
+    3,
   );
 }
 
 async function refreshTranscripts() {
-  const payload = await fetchJson("/api/v1/telemetry/transcripts", transcriptFilterState);
+  const payload = await fetchJson("/api/v1/telemetry/transcripts", transcript_filter_state);
   renderTableRows(
     "transcript-table",
     payload.transcripts.map(
@@ -129,6 +130,7 @@ async function refreshTranscripts() {
       </tr>`,
     ),
     "No transcripts matched the current filter.",
+    4,
   );
 }
 
@@ -146,6 +148,7 @@ async function refreshDrones() {
       </tr>`,
     ),
     "No drone contacts available.",
+    5,
   );
 }
 
@@ -181,7 +184,7 @@ function renderHeatmap(points) {
 }
 
 async function refreshHeatmap() {
-  const payload = await fetchJson("/api/v1/telemetry/heatmap", heatmapFilterState);
+  const payload = await fetchJson("/api/v1/telemetry/heatmap", heatmap_filter_state);
   renderHeatmap(payload.points || []);
 }
 
@@ -237,14 +240,14 @@ document.getElementById("key-config-form").addEventListener("submit", async (eve
 document.getElementById("transcript-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  Object.assign(transcriptFilterState, Object.fromEntries(form.entries()));
+  Object.assign(transcript_filter_state, Object.fromEntries(form.entries()));
   await refreshTranscripts();
 });
 
 document.getElementById("heatmap-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  Object.assign(heatmapFilterState, Object.fromEntries(form.entries()));
+  Object.assign(heatmap_filter_state, Object.fromEntries(form.entries()));
   await refreshHeatmap();
 });
 
