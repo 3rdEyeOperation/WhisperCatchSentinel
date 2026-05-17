@@ -223,6 +223,9 @@ let cesium_loading = null;
 let cesium_failed = false;
 const CESIUM_VERSION = "1.118.2";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium`;
+// Camera framing constants for the 3D heatmap view.
+const CESIUM_MIN_CAMERA_PAD_DEG = 0.001;
+const CESIUM_CAMERA_PAD_RATIO = 0.4;
 
 function setViewStatus(message, level = "info") {
   const node = document.getElementById("rf-view-status");
@@ -333,8 +336,8 @@ function renderHeatmapCesium(points) {
     maxLon = Math.max(maxLon, point.lon);
   }
   // Frame the data set with a small padding ring.
-  const padLat = Math.max(0.001, (maxLat - minLat) * 0.4);
-  const padLon = Math.max(0.001, (maxLon - minLon) * 0.4);
+  const padLat = Math.max(CESIUM_MIN_CAMERA_PAD_DEG, (maxLat - minLat) * CESIUM_CAMERA_PAD_RATIO);
+  const padLon = Math.max(CESIUM_MIN_CAMERA_PAD_DEG, (maxLon - minLon) * CESIUM_CAMERA_PAD_RATIO);
   viewer.camera.flyTo({
     destination: Cesium.Rectangle.fromDegrees(
       minLon - padLon,
