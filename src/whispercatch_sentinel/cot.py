@@ -1,19 +1,39 @@
 from __future__ import annotations
 
 import socket
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 
 def build_cot_event(uid: str, lat: float, lon: float, hae: float = 0.0) -> str:
     now = datetime.now(timezone.utc)
     stale = now + timedelta(minutes=2)
-    return (
-        f'<event version="2.0" uid="{uid}" type="a-f-A" '\
-        f'time="{now.isoformat()}" start="{now.isoformat()}" '\
-        f'stale="{stale.isoformat()}" how="m-g">'
-        f'<point lat="{lat}" lon="{lon}" hae="{hae}" ce="10" le="10"/>'
-        "</event>"
+
+    event = ET.Element(
+        "event",
+        {
+            "version": "2.0",
+            "uid": uid,
+            "type": "a-f-A",
+            "time": now.isoformat(),
+            "start": now.isoformat(),
+            "stale": stale.isoformat(),
+            "how": "m-g",
+        },
     )
+    ET.SubElement(
+        event,
+        "point",
+        {
+            "lat": str(lat),
+            "lon": str(lon),
+            "hae": str(hae),
+            "ce": "10",
+            "le": "10",
+        },
+    )
+
+    return ET.tostring(event, encoding="unicode")
 
 
 def multicast_cot(group: str, port: int, payload: str) -> None:
