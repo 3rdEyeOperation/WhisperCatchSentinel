@@ -75,3 +75,38 @@ class HeatmapPoint(BaseModel):
 class HeatmapResponse(BaseModel):
     count: int
     points: list[HeatmapPoint]
+
+
+class GpsFixResponse(BaseModel):
+    """Live sensor location as reported by the on-board gpsd daemon."""
+
+    lat: float
+    lon: float
+    altitude_m: float | None = None
+    mode: int
+    received_at: float
+    fix_time: str | None = None
+    speed_mps: float | None = None
+    track_deg: float | None = None
+    eph_m: float | None = None
+    device: str | None = None
+
+
+class HeatmapObservationRequest(BaseModel):
+    """Operator / sensor task input for recording a heatmap observation.
+
+    ``sensor_lat`` and ``sensor_lon`` are optional: when omitted, the API
+    falls back to the live gpsd fix so the sensor doesn't have to know its
+    own coordinates. If gpsd has no fix either, the request is rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    frequency_hz: float = Field(gt=0)
+    rssi_dbm: float
+    signal_type: str = Field(min_length=1, max_length=64)
+    sensor_lat: float | None = Field(default=None, ge=-90, le=90)
+    sensor_lon: float | None = Field(default=None, ge=-180, le=180)
+    tx_power_dbm: float = 20.0
+    ring_samples: int = Field(default=12, ge=1, le=64)
+    captured_at: float | None = None

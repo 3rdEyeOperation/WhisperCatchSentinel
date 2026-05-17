@@ -168,3 +168,148 @@ def test_health_remains_cloud_free(client: TestClient) -> None:
     body = client.get("/api/v1/health").json()
     assert body["cloud_processing"] is False
     assert body["headless"] is True
+
+
+def test_dashboard_origin_is_cors_enabled(client: TestClient) -> None:
+    response = client.options(
+        "/api/v1/health",
+        headers={
+            "origin": "http://127.0.0.1:8080",
+            "access-control-request-method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:8080"
+
+
+# ---------------------------------------------------------------------------
+# gpsd-aware endpoints
+# ---------------------------------------------------------------------------
+def _make_gps_deps(tmp_path: Path) -> AppDependencies:
+    from whispercatch_sentinel.gps import GpsReceiver
+
+    storage = Storage(tmp_path / "wcs.sqlite")
+    vault = VolatileKeyVault(tmp_path / "keys.json", enforce_tmpfs=False)
+    config = RuntimeConfig(tmpfs_path=str(tmp_path), gpsd_enabled=True)
+    return AppDependencies(
+        config=config,
+        storage=storage,
+        vault=vault,
+        aggregator=CuasAggregator(),
+        heatmap=HeatmapEngine(storage),
+        bus=StreamBus(),
+        gateway=CotGateway(
+            config.cot_multicast_group,
+            config.cot_multicast_port,
+            sender=lambda *a, **kw: None,
+        ),
+        gps=GpsReceiver(),
+    )
+
+
+def test_position_endpoint_returns_null_without_fix(client: TestClient) -> None:
+    response = client.get("/api/v1/telemetry/position")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_position_endpoint_serves_live_fix(tmp_path: Path) -> None:
+    import time as _time
+    from whispercatch_sentinel.gps import GpsFix
+
+    deps = _make_gps_deps(tmp_path)
+    deps.gps.set_fix(
+        GpsFix(lat=45.5, lon=-73.6, altitude_m=42.0, mode=3, received_at=_time.time())
+    )
+    client = TestClient(create_app(deps))
+    body = client.get("/api/v1/telemetry/position").json()
+    assert body is not None
+    assert body["lat"] == pytest.approx(45.5)
+    assert body["lon"] == pytest.approx(-73.6)
+    assert body["mode"] == 3
+
+
+def test_status_includes_gps_block(client: TestClient, tmp_path: Path) -> None:
+    # Default deps fixture has no GPS receiver wired in.
+    body = client.get("/api/v1/config/status").json()
+    assert body["gps"]["enabled"] is False
+    assert body["gps"]["has_fix"] is False
+
+    # And with a GPS-enabled stack:
+    import time as _time
+    from whispercatch_sentinel.gps import GpsFix
+
+    deps = _make_gps_deps(tmp_path)
+    deps.gps.set_fix(
+        GpsFix(lat=10.0, lon=20.0, altitude_m=5.0, mode=3, received_at=_time.time())
+    )
+    body = TestClient(create_app(deps)).get("/api/v1/config/status").json()
+    assert body["gps"]["enabled"] is True
+    assert body["gps"]["has_fix"] is True
+    assert body["gps"]["fix"]["lat"] == pytest.approx(10.0)
+
+
+def test_observation_endpoint_uses_live_gpsd_fix(tmp_path: Path) -> None:
+    import time as _time
+    from whispercatch_sentinel.gps import GpsFix
+
+    deps = _make_gps_deps(tmp_path)
+    deps.gps.set_fix(
+        GpsFix(lat=51.5074, lon=-0.1278, altitude_m=35.0, mode=3, received_at=_time.time())
+    )
+    client = TestClient(create_app(deps))
+
+    response = client.post(
+        "/api/v1/telemetry/observation",
+        json={
+            "frequency_hz": 2_440_000_000,
+            "rssi_dbm": -52.0,
+            "signal_type": "wifi",
+            "ring_samples": 4,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["source"] == "gpsd"
+    assert body["points_recorded"] == 4
+    assert body["sensor_lat"] == pytest.approx(51.5074)
+
+    rows = deps.heatmap.query(signal_type="wifi")
+    assert len(rows) == 4
+    # Every ring point should sit within a few km of the gpsd fix.
+    for row in rows:
+        assert abs(row["lat"] - 51.5074) < 1.0
+        assert abs(row["lon"] - (-0.1278)) < 1.0
+
+
+def test_observation_endpoint_rejects_request_with_no_position(tmp_path: Path) -> None:
+    # No gpsd receiver, no operator-supplied coords ⇒ must 409 rather than
+    # silently writing rotten (0,0) points.
+    deps = _make_gps_deps(tmp_path)
+    deps.gps = None  # force "no GPS available" state
+    client = TestClient(create_app(deps))
+    response = client.post(
+        "/api/v1/telemetry/observation",
+        json={"frequency_hz": 100_000_000, "rssi_dbm": -70.0, "signal_type": "p25"},
+    )
+    assert response.status_code == 409
+    assert "no sensor position" in response.json()["detail"]
+
+
+def test_observation_endpoint_honors_explicit_override(client: TestClient, deps: AppDependencies) -> None:
+    response = client.post(
+        "/api/v1/telemetry/observation",
+        json={
+            "frequency_hz": 156_000_000,
+            "rssi_dbm": -65.0,
+            "signal_type": "p25",
+            "sensor_lat": 12.34,
+            "sensor_lon": 56.78,
+            "ring_samples": 3,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "request"
+    assert body["sensor_lat"] == pytest.approx(12.34)

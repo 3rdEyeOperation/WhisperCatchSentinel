@@ -25,6 +25,13 @@ class RuntimeConfig(BaseModel):
     whisper_cpp_binary: str = "whisper-cli"
     cot_multicast_group: str = "239.2.3.1"
     cot_multicast_port: int = 6969
+    # gpsd integration — the sensor box reads its live location from gpsd so
+    # every heatmap point is stamped with the actual antenna position
+    # instead of an operator-typed coordinate. Disabled by default so unit
+    # tests and laptops without GPS don't try to open a TCP socket.
+    gpsd_enabled: bool = False
+    gpsd_host: str = "127.0.0.1"
+    gpsd_port: int = 2947
 
 
 HARDWARE_PROFILES = [
@@ -47,6 +54,11 @@ HARDWARE_PROFILES = [
         name="Sniffle BLE Coded PHY",
         purpose="BLE telemetry and Coded PHY sniffing",
         usb_path_hint="/dev/serial/by-id",
+    ),
+    DeviceProfile(
+        name="gpsd GPS receiver",
+        purpose="Live sensor position for heatmap stamping (USB/UART GPS via gpsd)",
+        usb_path_hint="/dev/gpsd",
     ),
 ]
 

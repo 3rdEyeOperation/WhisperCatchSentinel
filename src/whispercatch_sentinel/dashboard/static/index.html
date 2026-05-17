@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>WhisperCatch Sentinel Dashboard</title>
+    <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
+    <link rel="stylesheet" href="/assets/dashboard.css">
+  </head>
+  <body>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">WhisperCatch Sentinel</p>
+        <h1>Operator Dashboard</h1>
+        <p class="subtitle">Browser dashboard for the local backend REST and WebSocket services.</p>
+      </div>
+      <div class="badge-group">
+        <span class="badge" id="backend-url"></span>
+        <button type="button" id="refresh-all">Refresh data</button>
+      </div>
+    </header>
+
+    <main class="dashboard-grid">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>System health</h2>
+          <button type="button" data-action="refresh-status">Refresh</button>
+        </div>
+        <dl class="metric-grid" id="status-metrics"></dl>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>State</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody id="device-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>System configuration</h2>
+        </div>
+        <form id="system-config-form" class="stack-form">
+          <label>
+            Profile
+            <select name="profile">
+              <option>SCAN_COMBAT</option>
+              <option>MONITOR_VOICE</option>
+              <option>DRONE_HUNT</option>
+              <option>PASSIVE</option>
+            </select>
+          </label>
+          <label>
+            Sweeps JSON
+            <textarea name="sweeps" rows="4" placeholder='{"2.4GHz":[2400000000,2500000000,1000000]}'></textarea>
+          </label>
+          <button type="submit">Apply profile</button>
+        </form>
+        <form id="key-config-form" class="stack-form">
+          <h3>Key injection</h3>
+          <label>
+            Key ID
+            <input type="text" name="key_id" required>
+          </label>
+          <label>
+            Algorithm
+            <select name="algorithm">
+              <option>AES-256-OFB</option>
+              <option>DES-OFB</option>
+            </select>
+          </label>
+          <label>
+            Key hex
+            <input type="text" name="key_hex" required>
+          </label>
+          <button type="submit">Inject key</button>
+        </form>
+        <pre class="result-box" id="config-results">Ready.</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Transcript viewer</h2>
+          <button type="button" data-action="refresh-transcripts">Refresh</button>
+        </div>
+        <form id="transcript-filter-form" class="inline-form">
+          <input type="text" name="talkgroup" placeholder="Talkgroup">
+          <select name="decrypted">
+            <option value="">Decrypted: any</option>
+            <option value="true">Decrypted only</option>
+            <option value="false">Not decrypted</option>
+          </select>
+          <select name="clear">
+            <option value="">Traffic: any</option>
+            <option value="true">Clear only</option>
+            <option value="false">Encrypted only</option>
+          </select>
+          <input type="number" name="limit" min="1" max="1000" value="100">
+          <button type="submit">Apply</button>
+        </form>
+        <div class="table-wrap tall">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Talkgroup</th>
+                <th>Flags</th>
+                <th>Text</th>
+              </tr>
+            </thead>
+            <tbody id="transcript-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Drone telemetry</h2>
+          <button type="button" data-action="refresh-drones">Refresh</button>
+        </div>
+        <div class="table-wrap tall">
+          <table>
+            <thead>
+              <tr>
+                <th>Serial</th>
+                <th>Protocol</th>
+                <th>RSSI</th>
+                <th>Drone</th>
+                <th>Pilot</th>
+              </tr>
+            </thead>
+            <tbody id="drone-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel panel-wide rf-panel">
+        <div class="panel-header">
+          <div>
+            <h2>RF Coverage &amp; Frequency Planning</h2>
+            <p class="hint">CloudRF-style geo heatmap of every detected emitter — radio comms, drone C2 and telemetry — for spectrum and comm-plan decisions.</p>
+          </div>
+          <div class="rf-header-actions">
+            <div class="view-toggle" role="tablist" aria-label="Heatmap view mode">
+              <button type="button" class="view-toggle-btn active" data-view="2d" role="tab" aria-selected="true">2D map</button>
+              <button type="button" class="view-toggle-btn" data-view="3d" role="tab" aria-selected="false">3D globe</button>
+            </div>
+            <button type="button" data-action="refresh-heatmap">Refresh</button>
+          </div>
+        </div>
+        <form id="heatmap-filter-form" class="inline-form">
+          <input type="text" name="signal_type" placeholder="Signal type (e.g. droneid)">
+          <input type="number" name="frequency_hz" placeholder="Frequency Hz">
+          <input type="number" name="tolerance_hz" value="5000000" min="0">
+          <input type="number" name="limit" value="2000" min="1" max="20000">
+          <button type="submit">Apply</button>
+          <button type="button" id="heatmap-reset">Reset</button>
+        </form>
+        <div class="rf-toolbar">
+          <div class="chip-row" id="band-chips" aria-label="Frequency band filters"></div>
+          <div class="chip-row" id="signal-chips" aria-label="Signal type filters"></div>
+        </div>
+        <div class="rf-layout">
+          <div class="rf-map-wrap">
+            <div id="heatmap-map" class="rf-map" aria-label="RF coverage heatmap"></div>
+            <div id="heatmap-cesium" class="rf-map rf-cesium hidden" aria-label="RF coverage 3D globe"></div>
+            <svg id="heatmap-fallback" class="rf-fallback" viewBox="0 0 640 240" role="img" aria-label="Heatmap point plot fallback"></svg>
+            <div class="rf-legend" aria-label="Heatmap intensity legend">
+              <span class="rf-legend-label">Low</span>
+              <span class="rf-legend-gradient"></span>
+              <span class="rf-legend-label">High</span>
+            </div>
+            <p class="rf-view-status hint" id="rf-view-status" role="status" aria-live="polite"></p>
+          </div>
+          <aside class="rf-sidebar">
+            <div class="rf-card">
+              <h3>Spectrum summary</h3>
+              <dl class="metric-grid compact" id="rf-summary"></dl>
+            </div>
+            <div class="rf-card">
+              <h3>Band breakdown</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Band</th>
+                      <th>Hits</th>
+                      <th>Avg RSSI</th>
+                      <th>Peak</th>
+                    </tr>
+                  </thead>
+                  <tbody id="band-breakdown"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="rf-card">
+              <h3>Top emitters</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Frequency</th>
+                      <th>Type</th>
+                      <th>Hits</th>
+                      <th>Avg RSSI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="top-emitters"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="rf-card">
+              <h3>Comm-plan suggestions</h3>
+              <p class="hint">Quieter sub-bands ranked by lowest activity — candidates for friendly comms.</p>
+              <ul class="rf-suggestions" id="comm-suggestions"></ul>
+            </div>
+            <div class="rf-card">
+              <h3>Drone telemetry planning</h3>
+              <p class="hint">Cross-references DroneID / Wi-Fi / BLE telemetry with the spectrum so operators can choose link frequencies away from contested bands.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Protocol</th>
+                      <th>Drones</th>
+                      <th>Bands</th>
+                      <th>Avg RSSI</th>
+                    </tr>
+                  </thead>
+                  <tbody id="drone-band-table"></tbody>
+                </table>
+              </div>
+              <ul class="rf-suggestions" id="drone-suggestions"></ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Live streams</h2>
+        </div>
+        <div class="stream-grid">
+          <article>
+            <h3>Waterfall</h3>
+            <p class="stream-status" id="waterfall-status">Connecting…</p>
+            <pre class="stream-log" id="waterfall-log"></pre>
+          </article>
+          <article>
+            <h3>SIGINT</h3>
+            <p class="stream-status" id="sigint-status">Connecting…</p>
+            <pre class="stream-log" id="sigint-log"></pre>
+          </article>
+          <article>
+            <h3>FPV video</h3>
+            <p class="stream-status" id="fpv-status">Connecting…</p>
+            <img id="fpv-frame" alt="Latest FPV frame">
+            <pre class="stream-log" id="fpv-log"></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Operator helpers</h2>
+        </div>
+        <form id="cot-form" class="stack-form">
+          <h3>CoT emit</h3>
+          <label>
+            UID
+            <input type="text" name="uid" required>
+          </label>
+          <label>
+            Latitude
+            <input type="number" step="any" name="lat" required>
+          </label>
+          <label>
+            Longitude
+            <input type="number" step="any" name="lon" required>
+          </label>
+          <label>
+            HAE
+            <input type="number" step="any" name="hae" value="0">
+          </label>
+          <button type="submit">Send CoT</button>
+        </form>
+        <form id="cuas-form" class="stack-form">
+          <h3>Inject drone contact</h3>
+          <label>
+            Source
+            <input type="text" name="source" value="dashboard" required>
+          </label>
+          <label>
+            Protocol
+            <input type="text" name="protocol" value="manual" required>
+          </label>
+          <label>
+            RSSI dBm
+            <input type="number" step="any" name="rssi_dbm" value="-55" required>
+          </label>
+          <label>
+            Serial
+            <input type="text" name="serial">
+          </label>
+          <label>
+            Drone lat
+            <input type="number" step="any" name="drone_lat">
+          </label>
+          <label>
+            Drone lon
+            <input type="number" step="any" name="drone_lon">
+          </label>
+          <button type="submit">Inject contact</button>
+        </form>
+        <pre class="result-box" id="operator-results">Ready.</pre>
+      </section>
+    </main>
+
+    <script id="dashboard-config" type="application/json">__WCS_DASHBOARD_CONFIG__</script>
+    <script src="/assets/vendor/leaflet/leaflet.js" defer></script>
+    <script src="/assets/vendor/leaflet/leaflet-heat.js" defer></script>
+    <script src="/assets/dashboard.js" defer></script>
+  </body>
+</html>
