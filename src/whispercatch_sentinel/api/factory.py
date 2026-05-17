@@ -1,12 +1,14 @@
 """Top-level FastAPI app composition."""
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..config import RuntimeConfig, is_tmpfs_ramdisk
@@ -66,10 +68,24 @@ def _build_default_dependencies(
     )
 
 
+def _dashboard_allowed_origins() -> list[str]:
+    configured = os.getenv("WHISPERCATCH_DASHBOARD_ORIGINS")
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return ["http://127.0.0.1:8080", "http://localhost:8080"]
+
+
 def create_app(deps: AppDependencies | None = None) -> FastAPI:
     deps = deps or _build_default_dependencies()
     app = FastAPI(title="WhisperCatch Sentinel", version="0.2.0")
     app.state.deps = deps
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_dashboard_allowed_origins(),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # ------------------------------------------------------------------
     # Configuration & control endpoints

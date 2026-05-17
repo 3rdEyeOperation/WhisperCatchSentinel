@@ -1,0 +1,245 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, sans-serif;
+  --bg: #07111f;
+  --panel: #0f1d31;
+  --panel-border: #22344f;
+  --text: #eaf2ff;
+  --muted: #9ab0c9;
+  --accent: #59c1ff;
+  --good: #48d597;
+  --warn: #ffcc66;
+  --bad: #ff7b7b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #050c16 0%, var(--bg) 100%);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--panel-border);
+  background: #102844;
+  color: var(--text);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #153257;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 1px solid var(--panel-border);
+  background: #081120;
+  color: var(--text);
+  padding: 0.65rem 0.75rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.5rem;
+}
+
+.eyebrow,
+.subtitle,
+.hint,
+.stream-status {
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.badge-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: rgba(89, 193, 255, 0.08);
+  color: var(--accent);
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  padding: 0 1.5rem 1.5rem;
+}
+
+.panel {
+  background: rgba(15, 29, 49, 0.95);
+  border: 1px solid var(--panel-border);
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.panel-wide {
+  grid-column: 1 / -1;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.metric-grid div {
+  padding: 0.75rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--panel-border);
+  background: #0a1627;
+}
+
+.metric-grid dt {
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.metric-grid dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.stack-form,
+.inline-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.inline-form {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 0.75rem;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+.table-wrap.tall {
+  max-height: 22rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.65rem 0.5rem;
+  border-bottom: 1px solid rgba(154, 176, 201, 0.12);
+  vertical-align: top;
+}
+
+.result-box,
+.stream-log {
+  min-height: 6rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--panel-border);
+  background: #081120;
+  white-space: pre-wrap;
+}
+
+.stream-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+#heatmap-plot {
+  width: 100%;
+  min-height: 240px;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.8rem;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    #081120;
+  background-size: 40px 40px;
+}
+
+#fpv-frame {
+  width: 100%;
+  min-height: 120px;
+  object-fit: contain;
+  border-radius: 0.75rem;
+  border: 1px solid var(--panel-border);
+  background: #081120;
+  margin-bottom: 0.75rem;
+}
+
+.state-ok {
+  color: var(--good);
+}
+
+.state-warn {
+  color: var(--warn);
+}
+
+.state-bad {
+  color: var(--bad);
+}
+
+@media (max-width: 840px) {
+  .page-header {
+    flex-direction: column;
+  }
+}

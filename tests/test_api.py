@@ -168,3 +168,16 @@ def test_health_remains_cloud_free(client: TestClient) -> None:
     body = client.get("/api/v1/health").json()
     assert body["cloud_processing"] is False
     assert body["headless"] is True
+
+
+def test_dashboard_origin_is_cors_enabled(client: TestClient) -> None:
+    response = client.options(
+        "/api/v1/health",
+        headers={
+            "origin": "http://127.0.0.1:8080",
+            "access-control-request-method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:8080"

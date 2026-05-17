@@ -1,10 +1,11 @@
 # WhisperCatchSentinel
 
-Headless tactical SIGINT & C-UAS sensor node engineered for ARM64 edge devices.
-Features multi-channel P25/DMR digital trunking decryption, local Whisper voice
-transcription, Direct Remote ID / DJI DroneID tracking, and 5.8GHz analog FPV
-video interception. Integrates seamlessly with Iron Patriot mesh networks and
-ATAK via REST APIs, WebSocket streams, and multicast Cursor-on-Target.
+Tactical sensor node backend with a FastAPI API surface and a local operator
+dashboard. Features multi-channel P25/DMR digital trunking decryption, local
+Whisper voice transcription, Direct Remote ID / DJI DroneID tracking, and
+5.8GHz analog FPV video interception. Integrates with downstream clients via
+REST APIs, WebSocket streams, multicast Cursor-on-Target, and a browser-based
+dashboard.
 
 ## Architecture
 
@@ -63,8 +64,40 @@ are ever returned through the API.
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
+
+# Backend API on http://127.0.0.1:8000
 uvicorn whispercatch_sentinel.app:app --host 0.0.0.0 --port 8000
+
+# Dashboard UI on http://127.0.0.1:8080
+uvicorn whispercatch_sentinel.dashboard.app:app --host 0.0.0.0 --port 8080
 ```
+
+The dashboard expects the backend to be reachable at `http://127.0.0.1:8000`
+by default. Override this when needed:
+
+```bash
+WHISPERCATCH_BACKEND_URL=http://127.0.0.1:8000 \
+uvicorn whispercatch_sentinel.dashboard.app:app --host 0.0.0.0 --port 8080
+```
+
+The backend accepts browser requests from `http://127.0.0.1:8080` and
+`http://localhost:8080` by default. To allow additional dashboard origins, set:
+
+```bash
+WHISPERCATCH_DASHBOARD_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
+```
+
+## Dashboard features
+
+The dashboard served on port `8080` provides:
+
+- system health and hardware status
+- system profile and key injection forms
+- transcript viewing with talkgroup/decryption filters
+- drone telemetry tables
+- SVG heatmap point visualization
+- live WebSocket panels for waterfall, SIGINT, and FPV streams
+- operator helper forms for CoT emission and CUAS ingest
 
 ## Test
 
