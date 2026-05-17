@@ -79,10 +79,11 @@ def is_tmpfs_ramdisk(path: str) -> bool:
     """Validate that crypto workspace is volatile RAM-backed storage."""
     try:
         with open("/proc/mounts", "r", encoding="utf-8") as mounts:
-            for line in mounts:
-                parts = line.split()
-                if len(parts) >= 3 and parts[1] == path and parts[2] == "tmpfs":
-                    return True
+            return any(
+                len(parts := line.split()) >= 3
+                and parts[1] == path
+                and parts[2] == "tmpfs"
+                for line in mounts
+            )
     except OSError:
         return False
-    return False
